@@ -10,13 +10,13 @@ default: all
 all: $(CATPNG) $(FINDPNG) $(PNGINFO)
 	
 $(CATPNG): $(CATPNG).c
-	$(CC) $(CFLAGS) -o $(CATPNG) $(CATPNG).c
+	$(CC) $(CFLAGS) -o $@ $<
 
 $(FINDPNG): $(FINDPNG).c
-	$(CC) $(CFLAGS) -o $(FINDPNG) $(FINDPNG).c
+	$(CC) $(CFLAGS) -o $@ $<
 
 $(PNGINFO): $(PNGINFO).c
-	$(CC) $(CFLAGS) -o $(PNGINFO) $(PNGINFO).c
+	$(CC) $(CFLAGS) -o $@ $<
 
 clean:
 	$(RM) $(CATPNG) $(CATPNG) $(FINDPNG) $(PNGINFO) *.o *~
