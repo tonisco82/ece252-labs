@@ -7,7 +7,7 @@
 #include <errno.h>
 #include <stdbool.h>
 
-bool is_png()
+bool is_png(U8 *source,  U64 source_len);
 
-get_data_IHDR()
+get_data_IHDR(U8 *dest, U64 *dest_len, U8 *source,  U64 source_len);
 
