@@ -1,5 +1,5 @@
 /**
- * @biref To demonstrate how to use zutil.c and crc.c functions
+ * @brief To demonstrate how to use zutil.c and crc.c functions
  *
  * Copyright 2018-2020 Yiqing Huang
  *

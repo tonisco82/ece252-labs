@@ -1,6 +1,7 @@
 Introduction:
     This is the Lab 1 code for ECE 252 written by Devon Miller-Junk and Braden Oldejans Bakker.
-    The original files in this repo are forked from Bernie Roehl, the lab instructor for this course.
+
+    The files in the starter directory in this repo are forked from Bernie Roehl, the lab instructor for this course and not written by Devon or Braden.
 
     The code is written for the purpose of ECE 252 Lab1 in Summer 2020.
 
@@ -46,7 +47,7 @@ Create:
             example:
                 1. Default
                     input:
-                        ./pnginfo WEED_1.png
+                        ./pnginfo WEEF_1.png
                     output:
                         WEEF_1.png: 450 x 229
 

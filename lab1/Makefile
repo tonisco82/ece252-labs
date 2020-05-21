@@ -19,4 +19,4 @@ $(PNGINFO): $(PNGINFO).c
 	$(CC) $(CFLAGS) -o $@ $<
 
 clean:
-	$(RM) $(CATPNG) $(CATPNG) $(FINDPNG) $(PNGINFO) *.o *~
+	rm -f $(CATPNG) $(CATPNG) $(FINDPNG) $(PNGINFO) *.o *~
