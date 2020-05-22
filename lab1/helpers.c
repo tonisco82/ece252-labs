@@ -7,6 +7,8 @@
 #include <errno.h>
 #include <string.h>
 
+#pragma once
+
 // What the 8-Byte Header of the PNG should look like in integer format
 int png_header[8] = {-119, 80, 78, 71, 13, 10, 26, 10};
 
