@@ -147,6 +147,8 @@ File I/O
 
         fclose: close after finished.
 
+        ftell: returns file position of a given stream.
+
 PNG File Format
 
     -Each pixel is represented by 4 8-bit unsigned integers (0-255 for RGBA)
@@ -253,4 +255,18 @@ Concatenate the Pixel Data
 
     Why?
 
-        Since the IDAT chunk is compressed using zlib format 1.0, we can use inflate (uncompress) on the data. The mem_inf function in the starter code takes in-memory deflated (compressed) data as input and stores the uncompressed data in a given memory location. For each IDAT chunk, call this function and stack the returned data in the order you wish to obtain the concatenated filtered pixel array. Then turn it into an IDAT chunk, compress it again using mem_def in the starter code. 
+        Since the IDAT chunk is compressed using zlib format 1.0, we can use inflate (uncompress) on the data. The mem_inf function in the starter code takes in-memory deflated (compressed) data as input and stores the uncompressed data in a given memory location. For each IDAT chunk, call this function and stack the returned data in the order you wish to obtain the concatenated filtered pixel array. Then turn it into an IDAT chunk, compress it again using mem_def in the starter code.
+
+More Function Examples
+
+    opendir: opens a directory stream named by the dirname argument.
+
+    closedir: close the directory stream
+
+    readdir: returns a pointer to a structure represent the directory entry at the current position in the directory stream.
+            Then repositions the directory stream at the next entry.
+
+    stat:
+
+    fstat:
+
