@@ -72,6 +72,8 @@ void printString(char *data)
     printf("%s\n", data);
 }
 
+// ***** FOR REFERENCE. REMOVE LATER *******
+
 // int main(int argc, char *argv[])
 // {
 //     // Declare first node

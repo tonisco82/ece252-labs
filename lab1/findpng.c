@@ -12,6 +12,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include "linkedList.c"
+#include "helpers.c"
 
 // Declare recursive find pngs function
 int findPNGs(char* curr_dir, Node_t **png_list);
@@ -33,7 +34,7 @@ int main(int argc, char *argv[]) {
     find_pngs_status = findPNGs(argv[1], &linked_list);
 
     // Print the list of PNG's in order.
-    scanList(start, printString);
+    scanList(linked_list, printString);
 
     if(linked_list == NULL){
         printf("findpng: No PNG file found");
@@ -96,12 +97,12 @@ int findPNGs(char* curr_dir, Node_t **png_list) {
                     //Is a regular file
 
                     // Check if PNG
-                    // if(is_png()){
-                    //     //Place into linked list
-                    //     char *temp_data = malloc((strlen(relative_path) + 1) * (sizeof(char)));
-                    //     strcpy(temp_data, relative_path);
-                    //     push(&png_list, temp_data);
-                    // }
+                    if(is_png(relative_path) == 1){
+                        //Place into linked list
+                        char *temp_data = malloc((strlen(relative_path) + 1) * (sizeof(char)));
+                        strcpy(temp_data, relative_path);
+                        push(png_list, temp_data);
+                    }
                 }
 
             } else {
