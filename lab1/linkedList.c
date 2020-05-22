@@ -2,7 +2,12 @@
 * @brief: Linked List class for c implementing a linked list of char arrays.
 */
 
-typedef struct Node {
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+typedef struct Node
+{
     // Character Array
     char *data;
 
@@ -10,10 +15,11 @@ typedef struct Node {
 } Node_t;
 
 // Push a new value to the Linked List.
-void push(Node_t** head_node, char *data_new){
+void push(Node_t **head_node, char *data_new)
+{
 
     // Malloc new Node
-    Node_t *new_node = (Node_t*) malloc(sizeof(Node_t));
+    Node_t *new_node = (Node_t *)malloc(sizeof(Node_t));
 
     // Assign Data to the same pointer
     new_node->data = data_new;
@@ -26,25 +32,29 @@ void push(Node_t** head_node, char *data_new){
 }
 
 // Scan list, perform the function on each data value
-void scanList(Node_t *head_node, void (*fnc_ptr)(char *)) {
-    
+void scanList(Node_t *head_node, void (*fnc_ptr)(char *))
+{
+
     // Iterate over list
-    while (head_node != NULL) {
+    while (head_node != NULL)
+    {
         // Perform desired Function
         (*fnc_ptr)(head_node->data);
 
         // Move to next node
-        node = node->next;
+        head_node = head_node->next;
     }
 }
 
 // Free Memory for linked list
-void freeMemory(Node_t *head_node) {
+void freeMemory(Node_t *head_node)
+{
 
     Node_t *curr_node = head_node;
 
     // Iterate over list
-    while (head_node != NULL) {
+    while (head_node != NULL)
+    {
         // Move to next node
         head_node = head_node->next;
 
@@ -57,25 +67,38 @@ void freeMemory(Node_t *head_node) {
     }
 }
 
-void printString(char *data){
-    printf(data);
+void printString(char *data)
+{
+    printf("%s\n", data);
 }
 
-int main()
+int main(int argc, char *argv[])
 {
+    // Declare first node
     Node_t *start = NULL;
 
-    char* data = "TESTING";
-    char* data1 = "TESTING1";
-    char* data2 = "TESTING2";
-    char* data3 = "TESTING3";
+    // Allocate Memory
+    char *data = malloc((5 * sizeof(char)));
+    char *data1 = malloc((5 * sizeof(char)));
+    char *data2 = malloc((5 * sizeof(char)));
+    char *data3 = malloc((5 * sizeof(char)));
 
+    strcpy(data, "test");
+    strcpy(data1, "tes1");
+    strcpy(data2, "tes2");
+    strcpy(data3, "tes3");
+
+    // Push to the linked list
     push(&start, data);
     push(&start, data1);
     push(&start, data2);
     push(&start, data3);
 
+    // Print the linked list
     scanList(start, printString);
 
+    // Free memory afterwards
     freeMemory(start);
+
+    return 0;
 }
