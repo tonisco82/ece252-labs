@@ -72,33 +72,33 @@ void printString(char *data)
     printf("%s\n", data);
 }
 
-int main(int argc, char *argv[])
-{
-    // Declare first node
-    Node_t *start = NULL;
+// int main(int argc, char *argv[])
+// {
+//     // Declare first node
+//     Node_t *start = NULL;
 
-    // Allocate Memory
-    char *data = malloc((5 * sizeof(char)));
-    char *data1 = malloc((5 * sizeof(char)));
-    char *data2 = malloc((5 * sizeof(char)));
-    char *data3 = malloc((5 * sizeof(char)));
+//     // Allocate Memory
+//     char *data = malloc((5 * sizeof(char)));
+//     char *data1 = malloc((5 * sizeof(char)));
+//     char *data2 = malloc((5 * sizeof(char)));
+//     char *data3 = malloc((5 * sizeof(char)));
 
-    strcpy(data, "test");
-    strcpy(data1, "tes1");
-    strcpy(data2, "tes2");
-    strcpy(data3, "tes3");
+//     strcpy(data, "test");
+//     strcpy(data1, "tes1");
+//     strcpy(data2, "tes2");
+//     strcpy(data3, "tes3");
 
-    // Push to the linked list
-    push(&start, data);
-    push(&start, data1);
-    push(&start, data2);
-    push(&start, data3);
+//     // Push to the linked list
+//     push(&start, data);
+//     push(&start, data1);
+//     push(&start, data2);
+//     push(&start, data3);
 
-    // Print the linked list
-    scanList(start, printString);
+//     // Print the linked list
+//     scanList(start, printString);
 
-    // Free memory afterwards
-    freeMemory(start);
+//     // Free memory afterwards
+//     freeMemory(start);
 
-    return 0;
-}
+//     return 0;
+// }

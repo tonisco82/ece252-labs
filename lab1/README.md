@@ -266,7 +266,7 @@ More Function Examples
     readdir: returns a pointer to a structure represent the directory entry at the current position in the directory stream.
             Then repositions the directory stream at the next entry.
 
-    stat:
+    stat: get file properties.
 
-    fstat:
+    fstat: get file information.
 
