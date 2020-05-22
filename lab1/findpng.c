@@ -33,6 +33,10 @@ int main(int argc, char *argv[]) {
     // Recursively navigate through the directory to find the PNGs
     find_pngs_status = findPNGs(argv[1], &linked_list);
 
+    if(find_pngs_status != 0){
+        printf("Error Occured in Finding the PNG, exited with error code %d", find_pngs_status);
+    }
+
     // Print the list of PNG's in order.
     scanList(linked_list, printString);
 

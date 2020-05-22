@@ -25,15 +25,19 @@ int is_png(char* file_path){
     for(int i=0;i<buffer_len;i++){
         if(buffer[i] != png_header[i]){
             // Not a PNG
+
+            fclose(fp);
             return 0;
         }
     }
 
     if(fread_status != 1) {
         printf("Error in reading the png file");
+        fclose(fp);
         return -1;
     }
 
+    fclose(fp);
     return 1;
 }
 
