@@ -88,6 +88,26 @@ int get_chunk(struct chunk *out, FILE *fp, long *offset){
     return 0; //returns current file position on a success
 }
 
+int get_png(FILE* fp, struct simple_PNG* png) {
+    chunk_p IHDR;
+    chunk_p IDAT;
+    chunk_p IEND;
+    int* offset = 8;
+    int result = 0;
+    result = get_chunk(IHDR, fp, &offset);
+    if (result ==0){
+        result = get_chunk(IDAT, fp, &offset);
+    }
+    if (result ==0){
+        result = get_chunk(IEND, fp, &offset);
+    }
+    png->p_IHDR = IHDR;
+    png->p_IDAT = IDAT;
+    png->p_IEND = IEND;
+
+    return result;
+}
+
 
 
 

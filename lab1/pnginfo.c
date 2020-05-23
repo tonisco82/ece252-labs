@@ -12,12 +12,7 @@
 #include <sys/stat.h>
 #include "helpers.c"
 #include "crc.h"
-
-#define PNG_SIG_SIZE    8 /* number of bytes of png image signature data */
-#define CHUNK_LEN_SIZE  4 /* chunk length field size in bytes */          
-#define CHUNK_TYPE_SIZE 4 /* chunk type field size in bytes */
-#define CHUNK_CRC_SIZE  4 /* chunk CRC field size in bytes */
-#define DATA_IHDR_SIZE 13 /* IHDR chunk data field size */
+#include "lab_png.h"
 
 int crccheck (struct chunk* data){
 	int crcflag = 0;
