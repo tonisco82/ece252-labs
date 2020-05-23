@@ -6,6 +6,7 @@
  *         (0, 1, 2, 3, 4, ...), which indicate the position of the image from top to bottom.
  *         The resulting combined PNG should be called all.png.
  * EXAMPLE: ./catpng ./img1.png ./png/img2.png
+<<<<<<< Updated upstream
  */
 
 #include <stdio.h>
@@ -27,6 +28,7 @@ int main(int argc, char *argv[]) {
     FILE *fp;
     fp = argv[1];
    	simple_PNG_p imgs[argc-1];
+
    	for (int i=0; i<(argc-1); i++){
    		fp = argv[i+1];
    		get_png(fp, imgs[i]); 
@@ -39,6 +41,9 @@ int main(int argc, char *argv[]) {
    	}
 
    	
+   	for (int i=0; i<(argc-1); i++){
+   		
+   	}
 
    	return 0;
 }
