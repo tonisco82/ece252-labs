@@ -47,10 +47,36 @@ int is_png(char* file_path){
     return 1;
 }
 
-// Place the IHDR information into the destination location.
-// Destination should have 13 bytes of space available.
+// Takes the IHDR chunk data (should be a pointer to 25bytes of data)
+// Files the data pointed to by the width and height pointers with the width and height of the PNG
 // For information about how the IHDR data is formatted see the Readme
-int get_data_IHDR(char* data);
+int get_data_IHDR(char* IHDR_chunk, struct data_IHDR* data){
+
+    int initial_position = 8;
+
+    data->width = *((U32*)(IHDR_chunk + initial_position));
+    initial_position += sizeof(data->width);
+
+    data->height = *((U32*)(IHDR_chunk + initial_position));
+    initial_position += sizeof(data->height);
+
+    data->bit_depth = *((U8*)(IHDR_chunk + initial_position));
+    initial_position += sizeof(data->bit_depth);
+
+    data->color_type = *((U8*)(IHDR_chunk + initial_position));
+    initial_position += sizeof(data->color_type);
+
+    data->compression = *((U8*)(IHDR_chunk + initial_position));
+    initial_position += sizeof(data->compression);
+
+    data->filter = *((U8*)(IHDR_chunk + initial_position));
+    initial_position += sizeof(data->filter);
+
+    data->interlace = *((U8*)(IHDR_chunk + initial_position));
+    initial_position += sizeof(data->interlace);
+
+    return 0;
+}
 
 int get_chunk(struct chunk *out, FILE *fp, long *offset){
     int buf_len = 256;
@@ -107,7 +133,4 @@ int get_png(FILE* fp, struct simple_PNG* png) {
 
     return result;
 }
-
-
-
 
