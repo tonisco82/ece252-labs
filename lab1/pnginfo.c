@@ -43,7 +43,7 @@ int main(int argc, char *argv[]) {
     	chunk_p IHDR = malloc(sizeof(chunk));
     	int offset = 8;
     	offset = get_chunk(IHDR, fp, &offset);
-    	get_png_data_IHDR(IHDR->p_data);
+    	get_data_IHDR(IHDR->p_data, out);
     	if (out->width <= 0 || out->height <=0){
     		png=0;
     	} else if (out->bit_depth != 8 || out->color_type != 6) {
