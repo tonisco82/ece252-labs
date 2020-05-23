@@ -7,3 +7,38 @@
  *         The resulting combined PNG should be called all.png.
  * EXAMPLE: ./catpng ./img1.png ./png/img2.png
  */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include "helpers.c"
+#include "crc.h"
+#include "lab_png.h"
+
+int main(int argc, char *argv[]) {
+
+    if(argc <= 2) {
+        printf("Usage example: ./pnginfo WEEF_1.png\n");
+        return -1;
+    }
+
+    FILE *fp;
+    fp = argv[1];
+   	simple_PNG_p imgs[argc-1];
+   	for (int i=0; i<(argc-1); i++){
+   		fp = argv[i+1];
+   		get_png(fp, imgs[i]); 
+   	}
+
+   	int height;
+
+   	for (int i=0; i<(argc-1); i++){
+   		//get_IHDR(imgs[i]->p_data);
+   	}
+
+   	
+
+   	return 0;
+}
