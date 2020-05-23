@@ -36,15 +36,18 @@ int main(int argc, char *argv[]) {
 
    	int height;
 
-   	for (int i=0; i<(argc-1); i++){
+   	for (int i=0; i<(argc-1); i++){  //loop get IHDR data for dimensions
    		//get_IHDR(imgs[i]->p_data);
    	}
 
    	
-   	for (int i=0; i<(argc-1); i++){
+   	for (int i=0; i<(argc-1); i++){ //loop inflate data
    		void*a = malloc()
    		if (0 != mem_inf()
    	}
+   	//concatenate and deflate data
+
+   	//write to new file
 
    	return 0;
 }
