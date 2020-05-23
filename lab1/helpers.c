@@ -82,9 +82,7 @@ int get_chunk(struct chunk *out, FILE *fp, long *offset){
     int buf_len = 256;
     int fread_status;
     
-    FILE *fp;
-
-    fp = fopen(file_path, "rb");
+    fopen(fp);
 
     fseek(fp, *offset, SEEK_SET)
     int len;
