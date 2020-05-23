@@ -88,12 +88,13 @@ int main(int argc, char *argv[]) {
                 free(IEND);
     			return 0;
     		}
+            printf("%s: %d x %d\n", argv[1], out->width, out->height);
             free(out);
             free(IHDR);
             free(data->p_data)
             free(data);
             free(IEND);
-    			printf("%s: %d x %d\n", argv[1], out->width, out->height);
+
     	}
     }
     return 0;
