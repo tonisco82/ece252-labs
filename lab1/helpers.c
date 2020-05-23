@@ -89,9 +89,9 @@ int get_chunk(struct chunk *out, FILE *fp, long *offset){
 }
 
 int get_png(FILE* fp, struct simple_PNG* png) {
-    chunk_p IHDR;
-    chunk_p IDAT;
-    chunk_p IEND;
+    chunk_p IHDR = malloc(sizeof(chunk));
+    chunk_p IDAT = malloc(sizeof(chunk));
+    chunk_p IEND = malloc(sizeof(chunk));
     int* offset = 8;
     int result = 0;
     result = get_chunk(IHDR, fp, &offset);

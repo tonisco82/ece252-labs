@@ -17,6 +17,7 @@
 #include "helpers.c"
 #include "crc.h"
 #include "lab_png.h"
+#include "zutil.h"
 
 int main(int argc, char *argv[]) {
 
@@ -41,7 +42,8 @@ int main(int argc, char *argv[]) {
 
    	
    	for (int i=0; i<(argc-1); i++){
-   		
+   		void*a = malloc()
+   		if (0 != mem_inf()
    	}
 
    	return 0;
