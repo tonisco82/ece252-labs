@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
+#include "lab_png.h"
 
 #pragma once
 
@@ -49,7 +50,44 @@ int is_png(char* file_path){
 // Place the IHDR information into the destination location.
 // Destination should have 13 bytes of space available.
 // For information about how the IHDR data is formatted see the Readme
-int get_data_IHDR(char* file_path, char*destination);
+int get_data_IHDR(char* data);
+
+int get_chunk(struct chunk *out, FILE *fp, long *offset){
+    int buf_len = 256;
+    int fread_status;
+    
+    FILE *fp;
+
+    fp = fopen(file_path, "rb");
+
+    fseek(fp, *offset, SEEK_SET)
+    int len;
+    fread_status = fread(&len, CHUNK_LEN_SIZE, 1, fp);
+
+    ntohl(len);
+    out->length = len;
+
+    void*a = malloc(len);
+
+    fread(&(out->type[0]), CHUNK_TYPE_SIZE, 1, fp);
+    fread(a, len, 1, fp)
+    out->p_data = a;
+
+    int chunkcrc;
+    fread_status = fread(&chunkcrc, CHUNK_CRC_SIZE, 1, fp);
+    ntohl(chunkcrc);
+    out->crc = chunkcrc;
+
+    if(fread_status != 1) {
+        printf("Error in reading the png file");
+        fclose(fp);
+        return -1;
+    }
+    *offset = ftell(fp);
+    fclose(fp);
+    return 0; //returns current file position on a success
+}
+
 
 
 
