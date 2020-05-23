@@ -16,7 +16,8 @@
 
 int crccheck (struct chunk* data){
 	int crcflag = 0;
-	int testcrc = crc(data->*p_data, data->length)
+    ntol(data->p_data);
+	int testcrc = crc(data->p_data, data->length)
 	if (testcrc != data->crc){
 		crcflag = testcrc;
 	}
@@ -38,8 +39,8 @@ int main(int argc, char *argv[]) {
     	return 0;
     } else {
     	int png = 1;
-    	data_IHDR_p out;
-    	chunk_p IHDR;
+    	data_IHDR_p out = malloc(sizeof(data_IHDR));
+    	chunk_p IHDR = malloc(sizeof(chunk));
     	int offset = 8;
     	offset = get_chunk(IHDR, fp, &offset);
     	get_png_data_IHDR(IHDR->p_data);
@@ -58,27 +59,42 @@ int main(int argc, char *argv[]) {
     		if (crcflag !=0){
     			printf("%s: %d x %d\n", argv[1], out->width, out->height);
     			printf("IHDR chunk CRC error: computed %d, expected %d\n", crcflag, data->crc);
+                free(out);
+                free(IHDR);               
     			return 0;
     		}
-    		chunk_p data;
+    		chunk_p data = malloc(sizeof(chunk);
     		get_chunk(data, fp, &offset);
     		x = crccheck(data);
     		if (crcflag !=0){
     			printf("%s: %d x %d\n", argv[1], out->width, out->height);
     			printf("IDAT chunk CRC error: computed %d, expected %d\n", crcflag, data->crc);
+                free(out);
+                free(IHDR);
+                free(data->p_data)
+                free(data);
     			return 0;
     		}
-    		chunk_p IEND;
+    		chunk_p IEND  = malloc(sizeof(chunk);
     		get_chunk(IEND, fp, &offset);
     		x = crccheck(IEND);
     		if (crcflag !=0){
     			printf("%s: %d x %d\n", argv[1], out->width, out->height);
     			printf("IEND chunk CRC error: computed %d, expected %d\n", crcflag, data->crc);
+                free(out);
+                free(IHDR);
+                free(data->p_data)
+                free(data);
+                free(IEND);
     			return 0;
     		}
+            free(out);
+            free(IHDR);
+            free(data->p_data)
+            free(data);
+            free(IEND);
     			printf("%s: %d x %d\n", argv[1], out->width, out->height);
-    		}
     	}
-    
+    }
     return 0;
 }
