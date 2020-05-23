@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
+#include "./starter/png_util/lab_png.h"
 
 // What the 8-Byte Header of the PNG should look like in integer format
 int png_header[8] = {-119, 80, 78, 71, 13, 10, 26, 10};
@@ -47,54 +48,40 @@ int is_png(char* file_path){
 // Takes the IHDR chunk data (should be a pointer to 25bytes of data)
 // Files the data pointed to by the width and height pointers with the width and height of the PNG
 // For information about how the IHDR data is formatted see the Readme
-int get_data_IHDR(char* IHDR_chunk, unsigned int* width, unsigned int* height){
+int get_data_IHDR(char* IHDR_chunk, struct data_IHDR* data){
 
-    *width = 0;
-    *height = 0;
+    int initial_position = 8;
 
-    // This is assuming little endian data formatting, 
-    // reverse the order of the i for big-endian
-    for(int i=3;i>-1;i--){
-        *height = ((*height) << 8);
-        *height += (unsigned int)IHDR_chunk[i + 12];
+    data->width = *((U32*)(IHDR_chunk + initial_position));
+    initial_position += sizeof(data->width);
 
-        *width = ((*width) << 8);
-        *width += (unsigned int)IHDR_chunk[i + 8];
+    data->height = *((U32*)(IHDR_chunk + initial_position));
+    initial_position += sizeof(data->height);
 
-        printf("Current Width: %d\n", *width);
-        printf("Current Height: %d\n", *height);
-    }
+    data->bit_depth = *((U8*)(IHDR_chunk + initial_position));
+    initial_position += sizeof(data->bit_depth);
+
+    data->color_type = *((U8*)(IHDR_chunk + initial_position));
+    initial_position += sizeof(data->color_type);
+
+    data->compression = *((U8*)(IHDR_chunk + initial_position));
+    initial_position += sizeof(data->compression);
+
+    data->filter = *((U8*)(IHDR_chunk + initial_position));
+    initial_position += sizeof(data->filter);
+
+    data->interlace = *((U8*)(IHDR_chunk + initial_position));
+    initial_position += sizeof(data->interlace);
+
+    printf("Width %d\n", data->width);
+    printf("Height %d\n", data->height);
+    printf("BitDepth %d\n", data->bit_depth);
+    printf("Color Type %d\n", data->color_type);
+    printf("Compression %d\n", data->compression);
+    printf("Filter %d\n", data->filter);
+    printf("Interlace %d\n", data->interlace);
 
     return 0;
-}
-
-int main(int argc, char *argv[]) {
-
-    char* test = malloc(25*sizeof(char));
-
-    for(int i=0;i<25;i++){
-        test[i] = 'a';
-    }
-    test[24] = '\0';
-
-    printf("Test: %s\n", test);
-
-    unsigned int* input_width = (unsigned int*)test + 8;
-    //unsigned int* input_height = (unsigned int*)test + 12;
-
-    *input_width = 12191;
-
-    printf("Test: %s\n", test);
-
-    unsigned int width = 0;
-    unsigned int height = 0;
-
-    printf("%d\n", get_data_IHDR(test, &width, &height));
-
-    printf("Width: %d\n", width);
-    printf("Height: %d\n", height);
-
-    free(test);
 }
 
 
