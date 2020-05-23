@@ -16,7 +16,7 @@
 
 int crccheck (struct chunk* data){
 	int crcflag = 0;
-    ntol(data->p_data);
+    ntohl(data->p_data);
 	int testcrc = crc(data->p_data, data->length)
 	if (testcrc != data->crc){
 		crcflag = testcrc;
