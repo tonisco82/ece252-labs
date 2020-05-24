@@ -25,18 +25,21 @@ int crccheck (struct chunk* data){
 
 int get_png_info(char* file_path){
 
-    if (!ispng(file_path)){
+	// Check to make sure the file is a png
+    if (!is_png(file_path)){
 
     	printf("%s: Not a PNG file\n", file_path);
     	return 1;
 
     }
-	
+
+	// Getting the png info
 	int png = 1;
 	data_IHDR_p out = malloc(sizeof(struct data_IHDR));
 	chunk_p IHDR = malloc(sizeof(struct chunk));
 	int offset = 8;
-	offset = get_chunk(IHDR, fp, &offset);
+
+	offset = get_chunk(IHDR, file_path, &offset);
 	get_data_IHDR(IHDR->p_data, out);
 	if (out->width <= 0 || out->height <=0){
 		png=0;
