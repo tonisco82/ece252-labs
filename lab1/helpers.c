@@ -55,10 +55,10 @@ int get_data_IHDR(char* IHDR_chunk, data_IHDR_p data){
 
     int initial_position = 0;
 
-    data->width = *((U32*)(IHDR_chunk + initial_position));
+    data->width = ntohl(*((U32*)(IHDR_chunk + initial_position)));
     initial_position += sizeof(data->width);
 
-    data->height = *((U32*)(IHDR_chunk + initial_position));
+    data->height = ntohl(*((U32*)(IHDR_chunk + initial_position)));
     initial_position += sizeof(data->height);
 
     data->bit_depth = *((U8*)(IHDR_chunk + initial_position));
@@ -85,23 +85,29 @@ int get_data_IHDR(char* IHDR_chunk, data_IHDR_p data){
 // -1: Error in reading file
 // 0: got chunk
 int get_chunk(chunk_p out, char* file_path, long *offset){
+
     int fread_status = 0;
 
     // Open file at location
     FILE *fp = fopen(file_path, "rb");
-    fseek(fp, *offset, SEEK_SET);
+
+    fseek(fp, *offset, SEEK_SET); 
+    //Note: SEEK_SET is from beginning of file
+    // SEEK_CUR is from current position, SEEK_END is from end
 
     // Read 4-Byte Length field
-    int len = 0;
-    fread_status = fread(&len, CHUNK_LEN_SIZE, 1, fp);
+    unsigned int len = 0;
+    fread_status = fread(&len, CHUNK_LEN_SIZE, 1, fp); //Read 4 more bytes
+
     if(fread_status != 1) {
         fclose(fp);
         return -1;
     }
 
     // Reverse Byte order and place into the length field
-    //ntohl(len);
+    len = ntohl(len);
     out->length = len;
+
 
     // Place Type
     fread_status = fread(&(out->type[0]), CHUNK_TYPE_SIZE, 1, fp);
@@ -110,12 +116,16 @@ int get_chunk(chunk_p out, char* file_path, long *offset){
         return -1;
     }
 
+
     // Allocate Memory for data and read
-    out->p_data = (void *)malloc(len);
-    fread_status = fread(out->p_data, len, 1, fp);
-    if(fread_status != 1) {
-        fclose(fp);
-        return -1;
+    U8 *data_temp = (U8 *)malloc(len);
+    out->p_data = data_temp;
+    if(len > 0) {
+        fread_status = fread(data_temp, len, 1, fp);
+        if(fread_status != 1) {
+            fclose(fp);
+            return -1;
+        }
     }
 
     // CRC Field
@@ -126,10 +136,11 @@ int get_chunk(chunk_p out, char* file_path, long *offset){
         return -1;
     }
 
-    //ntohl(chunkcrc);
+    chunkcrc = ntohl(chunkcrc);
     out->crc = chunkcrc;
 
     *offset = ftell(fp);
+
     fclose(fp);
     return 0; //returns current file position on a success
 }
@@ -149,11 +160,12 @@ int get_png(char* file_path, struct simple_PNG* png) {
     chunk_p IDAT = (chunk_p) malloc(sizeof(struct chunk));
     chunk_p IEND = (chunk_p) malloc(sizeof(struct chunk));
 
-    long offset = 8; //8 To avoid the initial 8 bytes from the png header
+    long offset = 8; // To avoid the initial 8 bytes from the png header
     int result = 0;
 
     result = get_chunk(IHDR, file_path, &offset);
     if(result != 0){
+
         free(IHDR->p_data);
         free(IHDR);
         free(IDAT);
@@ -161,8 +173,18 @@ int get_png(char* file_path, struct simple_PNG* png) {
         return result;
     }
 
+    if(IHDR->length != 13){
+        // Not a PNG since the header isn't 13 bytes long.
+        free(IHDR->p_data);
+        free(IHDR);
+        free(IDAT);
+        free(IEND);
+        return 1;
+    }
+
     result = get_chunk(IDAT, file_path, &offset);
     if(result != 0){
+
         free(IHDR->p_data);
         free(IHDR);
         free(IDAT->p_data);
@@ -173,6 +195,7 @@ int get_png(char* file_path, struct simple_PNG* png) {
 
     result = get_chunk(IEND, file_path, &offset);
     if(result != 0){
+
         free(IHDR->p_data);
         free(IHDR);
         free(IDAT->p_data);
@@ -188,4 +211,59 @@ int get_png(char* file_path, struct simple_PNG* png) {
 
     return result;
 }
+
+// int main(int argc, char *argv[]) {
+//     // Input checking
+//     if(argc != 2) {
+//         printf("Usage example: ./findpng .\n");
+//         return -1;
+//     }
+
+//     	//Declare png "object"
+// 	simple_PNG_p png_file = (simple_PNG_p) malloc(sizeof(struct simple_PNG));
+
+//     // Format the png
+//     int png_info_status = get_png(argv[1], png_file);
+
+//     printf("PNG_INFO_Return value: %d\n", png_info_status);
+
+
+
+
+// 	if (png_info_status == 0 || png_info_status == 2){
+        
+//         // Format the Header Data
+//         data_IHDR_p IHDR_data = (data_IHDR_p)malloc(sizeof(struct data_IHDR));
+//         int get_data_IHDR_status = get_data_IHDR((char*) png_file->p_IHDR->p_data, IHDR_data);
+//         if (get_data_IHDR_status != 0) {
+//             printf("%s: Not a PNG file\n", argv[1]);
+//             free(IHDR_data);
+//             return -1;
+//         }
+
+//         printf("Width: %u\n", IHDR_data->width);
+//         printf("Height: %u\n", IHDR_data->height);
+//         printf("BitDepth: %u\n", IHDR_data->bit_depth);
+//         printf("Color Type: %u\n", IHDR_data->color_type);
+//         printf("Compression: %u\n", IHDR_data->compression);
+//         printf("Filter: %u\n", IHDR_data->filter);
+//         printf("Interlace: %u\n", IHDR_data->interlace);
+
+
+// 		// Info was fine, and thus still has memory allocated
+// 		free(png_file->p_IHDR->p_data);
+// 		free(png_file->p_IHDR);
+// 		free(png_file->p_IDAT->p_data);
+// 		free(png_file->p_IDAT);
+// 		free(png_file->p_IEND->p_data);
+// 		free(png_file->p_IEND);
+
+//         free(IHDR_data);
+// 	}
+
+// 	// Deallocate Memory
+// 	free(png_file);
+
+//     return 0;
+// }
 

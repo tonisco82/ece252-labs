@@ -14,12 +14,29 @@
 #include "./starter/png_util/crc.c"
 
 unsigned long crccheck (struct chunk* data){
-    //ntohl(data->p_data);
-	unsigned long testcrc = crc(data->p_data, data->length);
+	// Length of the crc buffer
+	int len = data->length + 4;
+
+	// Declare crc buffer
+	char * restrict chunk_crc_data = (char *)malloc(len);
+
+	// Copy type field into buffer
+	strcpy(chunk_crc_data, (char *)data->type);
+	// Copy data field into buffer
+	for(int i=0;i<data->length;i++){
+		*(chunk_crc_data + 4 + i) = (char) *(data->p_data + i);
+	}
+
+	// Run crc comparison
+	unsigned long testcrc = crc((unsigned char *)chunk_crc_data, len);
+
+	// Test if crc is the same or not
 	if (testcrc != data->crc){
+		// Returns what the crc should be upon failure
 		return  testcrc;
 	}
-	return (unsigned long) 0;  //returns 0 if pass, returns crc found if fail
+
+	return (unsigned long) 0;  //returns 0 for pass
 }
 
 
@@ -56,7 +73,7 @@ int get_png_info(char* file_path, struct simple_PNG* png_file) {
 	crcflag = crccheck(png_file->p_IHDR);
 	if (crcflag !=0){
 		printf("%s: %u x %u\n", file_path, IHDR_data->width, IHDR_data->height);
-		printf("IHDR chunk CRC error: computed %lu, expected %u\n", crcflag, png_file->p_IHDR->crc);
+		printf("IHDR chunk CRC error: computed %lx, expected %x\n", crcflag, png_file->p_IHDR->crc);
 		free(IHDR_data);
 		return 2;
 	}
@@ -65,7 +82,7 @@ int get_png_info(char* file_path, struct simple_PNG* png_file) {
 	crcflag = crccheck(png_file->p_IDAT);
 	if (crcflag !=0){
 		printf("%s: %u x %u\n", file_path, IHDR_data->width, IHDR_data->height);
-		printf("IDAT chunk CRC error: computed %lu, expected %u\n", crcflag, png_file->p_IDAT->crc);
+		printf("IDAT chunk CRC error: computed %lx, expected %x\n", crcflag, png_file->p_IDAT->crc);
 		free(IHDR_data);
 		return 2;
 	}
@@ -74,7 +91,7 @@ int get_png_info(char* file_path, struct simple_PNG* png_file) {
 	crcflag = crccheck(png_file->p_IEND);
 	if (crcflag !=0){
 		printf("%s: %u x %u\n", file_path, IHDR_data->width, IHDR_data->height);
-		printf("IEND chunk CRC error: computed %lu, expected %u\n", crcflag, png_file->p_IEND->crc);
+		printf("IEND chunk CRC error: computed %lx, expected %x\n", crcflag, png_file->p_IEND->crc);
 		free(IHDR_data);
 		return 2;
 	}
