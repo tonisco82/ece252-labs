@@ -270,3 +270,18 @@ More Function Examples
 
     fstat: get file information.
 
+Command Line Useful Functions:
+
+    file WEEF_1.png: info about the file
+
+    cat Disguise.png: reads to see proper file type
+
+    xxd WEEF_1.png: displays file in hexadecimal format
+
+        | more flag to paginate
+
+    display WEEF_1.png: png displayer
+
+    pngcheck WEEF_1.png: checks to see if the png is corrupted.
+
+    cmp pngfile1 pngfile1: outputs the line and bit differences betwee the two files.
