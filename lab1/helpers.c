@@ -6,7 +6,9 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
-#include "lab_png.h"
+#include <stdint.h>
+#include <arpa/inet.h>
+#include "./starter/png_util/lab_png.h"
 
 #pragma once
 
@@ -50,7 +52,7 @@ int is_png(char* file_path){
 // Takes the IHDR chunk data (should be a pointer to 25bytes of data)
 // Files the data pointed to by the width and height pointers with the width and height of the PNG
 // For information about how the IHDR data is formatted see the Readme
-int get_data_IHDR(char* IHDR_chunk, struct data_IHDR* data){
+int get_data_IHDR(char* IHDR_chunk, data_IHDR_p data){
 
     int initial_position = 8;
 
@@ -78,56 +80,103 @@ int get_data_IHDR(char* IHDR_chunk, struct data_IHDR* data){
     return 0;
 }
 
-int get_chunk(struct chunk *out, FILE *fp, long *offset){
-    int buf_len = 256;
-    int fread_status;
-    
-    fopen(fp);
+// Takes a file path to a png, and an offset inside the file.
+// Returns a chunk in the chunk data structure (out parameter)
+int get_chunk(chunk_p out, char* file_path, long *offset){
+    int fread_status = 0;
 
-    fseek(fp, *offset, SEEK_SET)
-    int len;
+    // Open file at location
+    FILE *fp = fopen(file_path, "rb");
+    fseek(fp, *offset, SEEK_SET);
+
+    // Read 4-Byte Length field
+    int len = 0;
     fread_status = fread(&len, CHUNK_LEN_SIZE, 1, fp);
-
-    ntohl(len);
-    out->length = len;
-
-    void*a = malloc(len);
-
-    fread(&(out->type[0]), CHUNK_TYPE_SIZE, 1, fp);
-    fread(a, len, 1, fp)
-    out->p_data = a;
-
-    int chunkcrc;
-    fread_status = fread(&chunkcrc, CHUNK_CRC_SIZE, 1, fp);
-    ntohl(chunkcrc);
-    out->crc = chunkcrc;
-
     if(fread_status != 1) {
         printf("Error in reading the png file");
         fclose(fp);
         return -1;
     }
+
+    // Reverse Byte order and place into the length field
+    ntohl(len);
+    out->length = len;
+
+    // Place Type
+    fread_status = fread(&(out->type[0]), CHUNK_TYPE_SIZE, 1, fp);
+    if(fread_status != 1) {
+        printf("Error in reading the png file");
+        fclose(fp);
+        return -1;
+    }
+
+    // Allocate Memory for data and read
+    out->p_data = (void *)malloc(len);
+    fread_status = fread(out->p_data, len, 1, fp);
+    if(fread_status != 1) {
+        printf("Error in reading the png file");
+        fclose(fp);
+        return -1;
+    }
+
+    // CRC Field
+    int chunkcrc;
+    fread_status = fread(&chunkcrc, CHUNK_CRC_SIZE, 1, fp);
+    if(fread_status != 1) {
+        printf("Error in reading the png file");
+        fclose(fp);
+        return -1;
+    }
+
+    ntohl(chunkcrc);
+    out->crc = chunkcrc;
+
     *offset = ftell(fp);
     fclose(fp);
     return 0; //returns current file position on a success
 }
 
-int get_png(FILE* fp, struct simple_PNG* png) {
-    chunk_p IHDR = malloc(sizeof(chunk));
-    chunk_p IDAT = malloc(sizeof(chunk));
-    chunk_p IEND = malloc(sizeof(chunk));
-    int* offset = 8;
+// Takes a complete png file and returns all the data decoded into a simple_PNG data structure
+int get_png(char* file_path, struct simple_PNG png) {
+
+    if(is_png(file_path) != 1){
+        return 1;
+    }
+    
+    chunk_p IHDR = (chunk_p) malloc(sizeof(struct chunk));
+    chunk_p IDAT = (chunk_p) malloc(sizeof(struct chunk));
+    chunk_p IEND = (chunk_p) malloc(sizeof(struct chunk));
+
+    long offset = 8; //8 To avoid the initial 8 bytes from the png header
     int result = 0;
-    result = get_chunk(IHDR, fp, &offset);
-    if (result ==0){
-        result = get_chunk(IDAT, fp, &offset);
+
+    result = get_chunk(IHDR, file_path, &offset);
+    if(result != 0){
+        free(IHDR);
+        free(IDAT);
+        free(IEND);
+        return result;
     }
-    if (result ==0){
-        result = get_chunk(IEND, fp, &offset);
+
+    result = get_chunk(IDAT, file_path, &offset);
+    if(result != 0){
+        free(IHDR);
+        free(IDAT);
+        free(IEND);
+        return result;
     }
-    png->p_IHDR = IHDR;
-    png->p_IDAT = IDAT;
-    png->p_IEND = IEND;
+
+    result = get_chunk(IEND, file_path, &offset);
+    if(result != 0){
+        free(IHDR);
+        free(IDAT);
+        free(IEND);
+        return result;
+    }
+
+    png.p_IHDR = IHDR;
+    png.p_IDAT = IDAT;
+    png.p_IEND = IEND;
 
     return result;
 }

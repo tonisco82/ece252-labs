@@ -7,10 +7,7 @@ PNGINFO = pnginfo
 
 default: all
 
-all: $(CATPNG) $(FINDPNG) $(PNGINFO)
-	
-$(CATPNG): $(CATPNG).c
-	$(CC) $(CFLAGS) -o $@ $<
+all: $(FINDPNG) $(PNGINFO)
 
 $(FINDPNG): $(FINDPNG).c
 	$(CC) $(CFLAGS) -o $@ $<
