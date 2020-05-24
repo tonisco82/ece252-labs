@@ -100,7 +100,7 @@ int get_chunk(chunk_p out, char* file_path, long *offset){
     }
 
     // Reverse Byte order and place into the length field
-    ntohl(len);
+    //ntohl(len);
     out->length = len;
 
     // Place Type
@@ -126,7 +126,7 @@ int get_chunk(chunk_p out, char* file_path, long *offset){
         return -1;
     }
 
-    ntohl(chunkcrc);
+    //ntohl(chunkcrc);
     out->crc = chunkcrc;
 
     *offset = ftell(fp);

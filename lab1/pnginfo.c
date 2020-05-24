@@ -11,11 +11,11 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include "helpers.c"
-#include "./starter/png_util/crc.h"
+#include "./starter/png_util/crc.c"
 
 unsigned long crccheck (struct chunk* data){
-    ntolh(data->p_data);
-	unsigned long testcrc = crc(data->p_data, data->length)
+    //ntohl(data->p_data);
+	unsigned long testcrc = crc(data->p_data, data->length);
 	if (testcrc != data->crc){
 		return  testcrc;
 	}
@@ -43,37 +43,45 @@ int get_png_info(char* file_path, struct simple_PNG* png_file) {
     	return get_png_status;
 	}
 
+	// Format the Header Data
+	data_IHDR_p IHDR_data = (data_IHDR_p)malloc(sizeof(struct data_IHDR));
+	int get_data_IHDR_status = get_data_IHDR((char*) png_file->p_IHDR->p_data, IHDR_data);
+	if (get_data_IHDR_status != 0) {
+		printf("%s: Not a PNG file\n", file_path);
+		free(IHDR_data);
+    	return get_png_status;
+	}
+
 	// **CRC Check for IHDR**
 	crcflag = crccheck(png_file->p_IHDR);
 	if (crcflag !=0){
-		printf("%s: %d x %d\n", file_path, png_file->p_IHDR->width, png_file->p_IHDR->height);
-		printf("IHDR chunk CRC error: computed %d, expected %d\n", crcflag, png_file->p_IHDR->crc);
-
+		printf("%s: %u x %u\n", file_path, IHDR_data->width, IHDR_data->height);
+		printf("IHDR chunk CRC error: computed %lu, expected %u\n", crcflag, png_file->p_IHDR->crc);
+		free(IHDR_data);
 		return 2;
 	}
 
 	// **CRC Check for IDAT**
 	crcflag = crccheck(png_file->p_IDAT);
 	if (crcflag !=0){
-		printf("%s: %d x %d\n", file_path, png_file->p_IHDR->width, png_file->p_IHDR->height);
-		printf("IDAT chunk CRC error: computed %d, expected %d\n", crcflag, png_file->p_IDAT->crc);
-
+		printf("%s: %u x %u\n", file_path, IHDR_data->width, IHDR_data->height);
+		printf("IDAT chunk CRC error: computed %lu, expected %u\n", crcflag, png_file->p_IDAT->crc);
+		free(IHDR_data);
 		return 2;
 	}
 
 	// **CRC Check for IEND**
 	crcflag = crccheck(png_file->p_IEND);
 	if (crcflag !=0){
-		printf("%s: %d x %d\n", file_path, png_file->p_IHDR->width, png_file->p_IHDR->height);
-		printf("IEND chunk CRC error: computed %d, expected %d\n", crcflag, png_file->p_IEND->crc);
-
+		printf("%s: %u x %u\n", file_path, IHDR_data->width, IHDR_data->height);
+		printf("IEND chunk CRC error: computed %lu, expected %u\n", crcflag, png_file->p_IEND->crc);
+		free(IHDR_data);
 		return 2;
 	}
 
 	// PNG looks fine
-
-	printf("%s: %d x %d\n", file_path, png_file->p_IHDR->width, png_file->p_IHDR->height);
-
+	printf("%s: %u x %u\n", file_path, IHDR_data->width, IHDR_data->height);
+	free(IHDR_data);
 	return 0;
 }
 
@@ -84,24 +92,23 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 	
-	simple_PNG_p png_file = (simple_PNG_p) malloc(sizeof(simple_PNG));
-
+	//Declare png "object"
+	simple_PNG_p png_file = (simple_PNG_p) malloc(sizeof(struct simple_PNG));
+	
+	// Format the png
     int png_info_status = get_png_info(argv[1], png_file);
 
 	if (png_info_status == 0 || png_info_status == 2){
-
 		// Info was fine, and thus still has memory allocated
-
 		free(png_file->p_IHDR->p_data);
 		free(png_file->p_IHDR);
 		free(png_file->p_IDAT->p_data);
 		free(png_file->p_IDAT);
 		free(png_file->p_IEND->p_data);
 		free(png_file->p_IEND);
-
-
 	}
 
+	// Deallocate Memory
 	free(png_file);
 
 	return 0;
