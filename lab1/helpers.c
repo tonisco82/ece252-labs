@@ -29,6 +29,12 @@ int is_png(char* file_path){
     fp = fopen(file_path, "rb");
 
     fread_status = fread(buffer, buffer_len, 1, fp);
+    
+    if(fread_status != 1) {
+        // Error in reading the png file
+        fclose(fp);
+        return -1;
+    }
 
     for(int i=0;i<buffer_len;i++){
         if(buffer[i] != png_header[i]){
@@ -37,12 +43,6 @@ int is_png(char* file_path){
             fclose(fp);
             return 0;
         }
-    }
-
-    if(fread_status != 1) {
-        printf("Error in reading the png file");
-        fclose(fp);
-        return -1;
     }
 
     fclose(fp);
@@ -54,7 +54,7 @@ int is_png(char* file_path){
 // For information about how the IHDR data is formatted see the Readme
 int get_data_IHDR(char* IHDR_chunk, data_IHDR_p data){
 
-    int initial_position = 8;
+    int initial_position = 0;
 
     data->width = *((U32*)(IHDR_chunk + initial_position));
     initial_position += sizeof(data->width);
@@ -82,6 +82,9 @@ int get_data_IHDR(char* IHDR_chunk, data_IHDR_p data){
 
 // Takes a file path to a png, and an offset inside the file.
 // Returns a chunk in the chunk data structure (out parameter)
+// Return values:
+// -1: Error in reading file
+// 0: got chunk
 int get_chunk(chunk_p out, char* file_path, long *offset){
     int fread_status = 0;
 
@@ -93,7 +96,6 @@ int get_chunk(chunk_p out, char* file_path, long *offset){
     int len = 0;
     fread_status = fread(&len, CHUNK_LEN_SIZE, 1, fp);
     if(fread_status != 1) {
-        printf("Error in reading the png file");
         fclose(fp);
         return -1;
     }
@@ -105,7 +107,6 @@ int get_chunk(chunk_p out, char* file_path, long *offset){
     // Place Type
     fread_status = fread(&(out->type[0]), CHUNK_TYPE_SIZE, 1, fp);
     if(fread_status != 1) {
-        printf("Error in reading the png file");
         fclose(fp);
         return -1;
     }
@@ -114,7 +115,6 @@ int get_chunk(chunk_p out, char* file_path, long *offset){
     out->p_data = (void *)malloc(len);
     fread_status = fread(out->p_data, len, 1, fp);
     if(fread_status != 1) {
-        printf("Error in reading the png file");
         fclose(fp);
         return -1;
     }
@@ -123,7 +123,6 @@ int get_chunk(chunk_p out, char* file_path, long *offset){
     int chunkcrc;
     fread_status = fread(&chunkcrc, CHUNK_CRC_SIZE, 1, fp);
     if(fread_status != 1) {
-        printf("Error in reading the png file");
         fclose(fp);
         return -1;
     }
@@ -137,6 +136,10 @@ int get_chunk(chunk_p out, char* file_path, long *offset){
 }
 
 // Takes a complete png file and returns all the data decoded into a simple_PNG data structure
+// Return values:
+// -1: Error in reading file
+// 0: got png
+// 1: Header does not match png header
 int get_png(char* file_path, struct simple_PNG png) {
 
     if(is_png(file_path) != 1){
@@ -152,6 +155,7 @@ int get_png(char* file_path, struct simple_PNG png) {
 
     result = get_chunk(IHDR, file_path, &offset);
     if(result != 0){
+        free(IHDR->p_data);
         free(IHDR);
         free(IDAT);
         free(IEND);
@@ -160,7 +164,9 @@ int get_png(char* file_path, struct simple_PNG png) {
 
     result = get_chunk(IDAT, file_path, &offset);
     if(result != 0){
+        free(IHDR->p_data);
         free(IHDR);
+        free(IDAT->p_data);
         free(IDAT);
         free(IEND);
         return result;
@@ -168,8 +174,11 @@ int get_png(char* file_path, struct simple_PNG png) {
 
     result = get_chunk(IEND, file_path, &offset);
     if(result != 0){
+        free(IHDR->p_data);
         free(IHDR);
+        free(IDAT->p_data);
         free(IDAT);
+        free(IEND->p_data);
         free(IEND);
         return result;
     }
