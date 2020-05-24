@@ -29,145 +29,52 @@ unsigned long crccheck (struct chunk* data){
 // -1: Error
 // 1: Not a PNG
 // 2: CRC Error
-int get_png_info(char* file_path) {
+int get_png_info(char* file_path, struct simple_PNG* png_file) {
 
-	// Check to make sure the file is a png
-    if (!is_png(file_path)){
+	unsigned long crcflag = 0;
 
-    	printf("%s: Not a PNG file\n", file_path);
-    	return 1;
+	// Decode PNG file into struct
+	int get_png_status = get_png(file_path, png_file);
 
-    }
-
-	// Getting the png info
-	data_IHDR_p IHDR_data = malloc(sizeof(struct data_IHDR));
-	chunk_p IHDR = malloc(sizeof(struct chunk));
-
-	int offset = 8; // Initial offset to avoid first 8 bytes of png header data
-	int get_chunk_status = 0;
-
-	// **Check the CRC of the IHDR chunk**
-
-	get_chunk_status = get_chunk(IHDR, file_path, &offset); //Get IHDR data pointer
-	if(get_chunk_status != 0){
+	// Check for Error Cases
+	if (get_png_status != 0) {
 		printf("%s: Not a PNG file\n", file_path);
 
-		free(IHDR_data);
-		free(IHDR->p_data);
-		free(IHDR);
-
-    	return 1;
-	}
-	get_data_IHDR(IHDR->p_data, IHDR_data); //Get IHDR specific data
-
-	// Check to make sure the PNG is valid
-
-	// NOTE: The following is commented out because a PNG file could not meet these specifications
-	// For this lab, all png files should meet these specifications, but not in general
-
-	/*
-	if (IHDR_data.width == 0 || IHDR_data.height ==0){
-		printf("%s: Not a PNG file\n", argv[1]);
-		return -1;
-	} else if (IHDR_data.bit_depth != 8 || IHDR_data.color_type != 6) {
-		printf("%s: Not a PNG file\n", argv[1]);
-		return -1;
-	} else if (IHDR_data.compression != 0 || IHDR_data.filter != 0 || IHDR_data.interlace != 0){
-		printf("%s: Not a PNG file\n", argv[1]);
-		return -1;
-	}
-	*/
-
-	unsigned long crcflag = crccheck(IHDR);
-
-	if (crcflag != 0){
-		printf("%s: %d x %d\n", file_path, IHDR_data->width, IHDR_data->height);
-		printf("IHDR chunk CRC error: computed %lu, expected %d\n", crcflag, data->crc);
-
-		free(IHDR_data);
-		free(IHDR->p_data);
-		free(IHDR);
-
-		return 2;
+    	return get_png_status;
 	}
 
-	// **Check the CRC of the IDAT chunk**
-
-	chunk_p IDAT = malloc(sizeof(chunk);
-
-	get_chunk_status = get_chunk(IDAT, fp, &offset);
-	if(get_chunk_status != 0){
-		printf("%s: Not a PNG file\n", file_path);
-
-		free(IHDR_data);
-		free(IHDR->p_data);
-		free(IHDR);
-		free(IDAT->p_data);
-		free(IDAT);
-
-    	return 1;
-	}
-
-	crcflag = crccheck(IDAT);
+	// **CRC Check for IHDR**
+	crcflag = crccheck(png_file->p_IHDR);
 	if (crcflag !=0){
-		printf("%s: %d x %d\n", file_path, IHDR_data->width, IHDR_data->height);
-		printf("IDAT chunk CRC error: computed %d, expected %d\n", crcflag, IDAT->crc);
-
-		free(IHDR_data);
-		free(IHDR->p_data);
-		free(IHDR);
-		free(IDAT->p_data);
-		free(IDAT);
+		printf("%s: %d x %d\n", file_path, png_file->p_IHDR->width, png_file->p_IHDR->height);
+		printf("IHDR chunk CRC error: computed %d, expected %d\n", crcflag, png_file->p_IHDR->crc);
 
 		return 2;
 	}
 
-	// **Check the CRC of the IEND chunk**
-
-	chunk_p IEND  = malloc(sizeof(chunk);
-
-	get_chunk_status = get_chunk(IEND, fp, &offset);
-	if(get_chunk_status != 0){
-		printf("%s: Not a PNG file\n", file_path);
-
-		free(IHDR_data);
-		free(IHDR->p_data);
-		free(IHDR);
-		free(IDAT->p_data);
-		free(IDAT);
-		free(IEND->p_data);
-		free(IEND);
-
-    	return 1;
-	}
-
-	crcflag = crccheck(IEND);
+	// **CRC Check for IDAT**
+	crcflag = crccheck(png_file->p_IDAT);
 	if (crcflag !=0){
-		printf("%s: %d x %d\n", file_path, IHDR_data->width, IHDR_data->height);
-		printf("IEND chunk CRC error: computed %d, expected %d\n", crcflag, IEND->crc);
-
-		free(IHDR_data);
-		free(IHDR->p_data);
-		free(IHDR);
-		free(IDAT->p_data);
-		free(IDAT);
-		free(IEND->p_data);
-		free(IEND);
+		printf("%s: %d x %d\n", file_path, png_file->p_IHDR->width, png_file->p_IHDR->height);
+		printf("IDAT chunk CRC error: computed %d, expected %d\n", crcflag, png_file->p_IDAT->crc);
 
 		return 2;
 	}
 
-	printf("%s: %d x %d\n", file_path, IHDR_data->width, IHDR_data->height);
+	// **CRC Check for IEND**
+	crcflag = crccheck(png_file->p_IEND);
+	if (crcflag !=0){
+		printf("%s: %d x %d\n", file_path, png_file->p_IHDR->width, png_file->p_IHDR->height);
+		printf("IEND chunk CRC error: computed %d, expected %d\n", crcflag, png_file->p_IEND->crc);
 
-	free(IHDR_data);
-	free(IHDR->p_data);
-	free(IHDR);
-	free(IDAT->p_data);
-	free(IDAT);
-	free(IEND->p_data);
-	free(IEND);
-	
-    return 0;
+		return 2;
+	}
+
+	// PNG looks fine
+
+	printf("%s: %d x %d\n", file_path, png_file->p_IHDR->width, png_file->p_IHDR->height);
+
+	return 0;
 }
 
 int main(int argc, char *argv[]) {
@@ -176,7 +83,26 @@ int main(int argc, char *argv[]) {
         printf("Usage example: ./pnginfo WEEF_1.png\n");
         return -1;
     }
+	
+	simple_PNG_p png_file = (simple_PNG_p) malloc(sizeof(simple_PNG));
 
-    int png_info_status = get_png_info(argv[1]);
-	return png_info_status;
+    int png_info_status = get_png_info(argv[1], png_file);
+
+	if (png_info_status == 0 || png_info_status == 2){
+
+		// Info was fine, and thus still has memory allocated
+
+		free(png_file->p_IHDR->p_data);
+		free(png_file->p_IHDR);
+		free(png_file->p_IDAT->p_data);
+		free(png_file->p_IDAT);
+		free(png_file->p_IEND->p_data);
+		free(png_file->p_IEND);
+
+
+	}
+
+	free(png_file);
+
+	return 0;
 }

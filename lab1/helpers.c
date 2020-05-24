@@ -29,7 +29,7 @@ int is_png(char* file_path){
     fp = fopen(file_path, "rb");
 
     fread_status = fread(buffer, buffer_len, 1, fp);
-    
+
     if(fread_status != 1) {
         // Error in reading the png file
         fclose(fp);
@@ -39,7 +39,6 @@ int is_png(char* file_path){
     for(int i=0;i<buffer_len;i++){
         if(buffer[i] != png_header[i]){
             // Not a PNG
-
             fclose(fp);
             return 0;
         }
@@ -140,7 +139,7 @@ int get_chunk(chunk_p out, char* file_path, long *offset){
 // -1: Error in reading file
 // 0: got png
 // 1: Header does not match png header
-int get_png(char* file_path, struct simple_PNG png) {
+int get_png(char* file_path, struct simple_PNG* png) {
 
     if(is_png(file_path) != 1){
         return 1;
@@ -183,9 +182,9 @@ int get_png(char* file_path, struct simple_PNG png) {
         return result;
     }
 
-    png.p_IHDR = IHDR;
-    png.p_IDAT = IDAT;
-    png.p_IEND = IEND;
+    png->p_IHDR = IHDR;
+    png->p_IDAT = IDAT;
+    png->p_IEND = IEND;
 
     return result;
 }
