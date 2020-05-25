@@ -6,7 +6,6 @@
  *         (0, 1, 2, 3, 4, ...), which indicate the position of the image from top to bottom.
  *         The resulting combined PNG should be called all.png.
  * EXAMPLE: ./catpng ./img1.png ./png/img2.png
-<<<<<<< Updated upstream
  */
 
 #include <stdio.h>
@@ -47,11 +46,11 @@ unsigned long crccheck (struct chunk* data){
 int main(int argc, char *argv[]) {
 
     if(argc <= 2) {
-        printf("Usage example: ./pnginfo WEEF_1.png\n");
+        printf("Usage example: ./catpng ./img1.png ./png/img2.png\n");
         return -1;
     }
 
-	simple_PNG_p imgs[argc-1];;
+	simple_PNG_p imgs[argc-1];
 
    	int get_png_status = 1;
 
@@ -60,6 +59,11 @@ int main(int argc, char *argv[]) {
    		get_png_status = get_png(argv[i+1], imgs[i]);
    		if (get_png_status != 0) {
 			printf("%s: failed to get png\n", argv[i+1]);
+
+			for(int j=0;j<=i;j++){
+				free(imgs[j]);
+			}
+
 	    	return get_png_status;
 		} 
    	}
@@ -72,15 +76,22 @@ int main(int argc, char *argv[]) {
 	   	calcs[i] = (data_IHDR_p)malloc(sizeof(struct data_IHDR));
    		int get_data_IHDR_status = get_data_IHDR((char*) imgs[i]->p_IHDR->p_data, calcs[i]);
 		if (get_data_IHDR_status != 0) {
+
 			printf("%s: failed to get IHDR data\n", argv[i+1]);
-			free(calcs);
-			free(imgs);
+
+			for(int j=0;j<=i;j++){
+				free(calcs[j]);
+			}
+			for(int j=0;j<=(argc-1);j++){
+				free(imgs[j]);
+			}
+
 	    	return get_png_status;
 		}  	
    		height += calcs[i]->height;
    	}
 	
-   	width = calcs[0]->width;
+   	width = calcs[0]->width; //Should all be the same width
 	printf("%d height %d width\n", height, width);
 
 	U8* catbuf = malloc(height*((width*4)+1));
@@ -94,7 +105,13 @@ int main(int argc, char *argv[]) {
    		len_inf = 0;
    		ret = mem_inf(catbuf+len_tot, &len_inf, imgs[i]->p_IDAT->p_data, len_def); //automatically concatenate inflated data to buffer
 	    if (ret !=0){
-	        fprintf(stderr,"mem_def failed. ret = %d.\n", ret);
+	        printf(stderr,"mem_def failed. ret = %d.\n", ret);
+
+			for(int j=0;j<=(argc-1);j++){
+				free(imgs[j]);
+				free(calcs[j]);
+			}
+
 	        return ret;
 	    }
 	    len_tot += len_inf;  //keep running total for buffer offset on next data inflate
@@ -108,8 +125,10 @@ int main(int argc, char *argv[]) {
     ret = mem_def(newdata, &len_def, catbuf, size, Z_DEFAULT_COMPRESSION);
     if (ret !=0){
         fprintf(stderr,"mem_def failed. ret = %d.\n", ret);
-		free(calcs);
-		free(imgs);
+		for(int j=0;j<=(argc-1);j++){
+			free(imgs[j]);
+			free(calcs[j]);
+		}
         return ret;
     }
     free(catbuf);
@@ -141,29 +160,37 @@ int main(int argc, char *argv[]) {
 	for (int i=0; i<8; i++){
 		fwrite(&png_header[i], 1, 1, fpw);  //this works for sure
 	}
+
 	//write IHDR
 	fwrite(&(newpng->p_IHDR->length), sizeof(newpng->p_IHDR->length), 1, fpw); //pretty sure the size and type are writing properly
 	fwrite(&(newpng->p_IHDR->type[0]), sizeof(newpng->p_IHDR->type), 1, fpw);
 	fwrite(newpng->p_IHDR->p_data, newpng->p_IHDR->length, 1, fpw);
 	fwrite(&(newpng->p_IHDR->crc), sizeof(newpng->p_IHDR->crc), 1, fpw);
+
 	//write IDAT
 	fwrite(&(newpng->p_IDAT->length), sizeof(newpng->p_IDAT->length), 1, fpw); 
 	fwrite(&(newpng->p_IDAT->type[0]), sizeof(newpng->p_IDAT->type), 1, fpw);
 	fwrite(newpng->p_IDAT->p_data, newpng->p_IDAT->length, 1, fpw);
 	fwrite(&(newpng->p_IDAT->crc), sizeof(newpng->p_IDAT->crc), 1, fpw);
+
 	//write IEND
 	fwrite(&(newpng->p_IEND->length), sizeof(newpng->p_IEND->length), 1, fpw); 
 	fwrite(&(newpng->p_IEND->type[0]), sizeof(newpng->p_IEND->type), 1, fpw);
 	fwrite(newpng->p_IEND->p_data, newpng->p_IEND->length, 1, fpw);
 	fwrite(&(newpng->p_IEND->crc), sizeof(newpng->p_IEND->crc), 1, fpw);
+	
 	fclose(fpw);
+
 	printf("%d\n", is_png("./all.png"));
 
 	for (int i=0; i<(argc-1); i++){  //loop to free memory
    		free(calcs[i]);
    		free(imgs[i]->p_IHDR->p_data);
+		free(imgs[i]->p_IHDR);
    		free(imgs[i]->p_IDAT->p_data);
+		free(imgs[i]->p_IDAT);
    		free(imgs[i]->p_IEND->p_data);
+		free(imgs[i]->p_IEND);
    		free(imgs[i]);
    	}
    	return 0;
