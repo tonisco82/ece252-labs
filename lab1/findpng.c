@@ -30,6 +30,12 @@ int main(int argc, char *argv[]) {
     // Declare linked list
     Node_t *linked_list = NULL;
 
+    // Check if file path last character is a / to remove it
+    char * last_char = (char *)(argv[1] + strlen(argv[1]) - 1);
+    if(strncmp("/", last_char, 1) == 0){
+        argv[1][strlen(argv[1]) - 1] = '\0';
+    }
+
     // Recursively navigate through the directory to find the PNGs
     find_pngs_status = findPNGs(argv[1], &linked_list);
 
@@ -81,7 +87,7 @@ int findPNGs(char* curr_dir, Node_t **png_list) {
 
     // Loop over files in the directory
     while ((dir_entry = readdir(this_dir)) != NULL) {
-        if(strcmp(".", dir_entry->d_name) != 0 && strcmp("..", dir_entry->d_name) != 0) {
+        if(strncmp(".", dir_entry->d_name, 1) != 0) {
             //Create relative file path
             relative_path = malloc((strlen(curr_dir) + strlen(dir_entry->d_name) + 2) * (sizeof(char)));
             // Make Relative Path
