@@ -114,7 +114,7 @@ int get_data_IHDR(char* IHDR_chunk, data_IHDR_p data){
     return 0;
 }
 
-//Prints a string in hex form
+//Prints a string in hex form, used for testing
 void printStringInHex(U8 *var, unsigned int length){
     for(int i=0;i<length;i++){
         printf("%02x", *(var + i));
@@ -138,49 +138,33 @@ int fill_data_IHDR(data_IHDR_p data, chunk_p destination){
 
     int offset = 0;
 
-    printf("%u height %u width before byte conversion\n", data->height, data->width);
-
     U32 width = htonl((unsigned int)data->width);
     U32 height = htonl((unsigned int)data->height);
 
-    printf("%lu height %lu width going into ihdr\n", height, width);
+    U32 *temp = (U32 *)destination->p_data;
 
-    printStringInHex(destination->p_data, 13);
-
-    *(destination->p_data + offset) = width;
+    *temp = width;
     offset += sizeof(U32);
 
-    printStringInHex(destination->p_data, 13);
+    temp = (U32 *)(destination->p_data + offset);
 
-    *(destination->p_data + offset) = height;
+    *temp = height;
     offset += sizeof(U32);
-
-    printStringInHex(destination->p_data, 13);
 
     *(destination->p_data + offset) = data->bit_depth;
     offset += sizeof(U8);
 
-    printStringInHex(destination->p_data, 13);
-
     *(destination->p_data + offset) = data->color_type;
     offset += sizeof(U8);
-
-    printStringInHex(destination->p_data, 13);
 
     *(destination->p_data + offset) = data->compression;
     offset += sizeof(U8);
 
-    printStringInHex(destination->p_data, 13);
-
     *(destination->p_data + offset) = data->filter;
     offset += sizeof(U8);
 
-    printStringInHex(destination->p_data, 13);
-
     *(destination->p_data + offset) = data->interlace;
     offset += sizeof(data->interlace);
-
-    printStringInHex(destination->p_data, 13);
 
     destination->crc = crccheck(destination);
 
@@ -396,34 +380,3 @@ int free_png(struct simple_PNG* png_file) {
     free(png_file);
     return 0;
 }
-
-// int main(int argc, char *argv[]) {
-
-//     simple_PNG_p png_file = (simple_PNG_p) malloc(sizeof(struct simple_PNG));
-
-//     int get_png_status = get_png(argv[1], png_file);
-
-//     // Check for Error Cases
-// 	if (get_png_status != 0) {
-// 		printf("%s: Not a PNG file\n", argv[1]);
-//         free(png_file);
-//     	return get_png_status;
-// 	}
-
-//     printf("Finished png %d\n", write_png_file("all.png", png_file));
-
-
-//     // Info was fine, and thus still has memory allocated
-//     free(png_file->p_IHDR->p_data);
-//     free(png_file->p_IHDR);
-//     free(png_file->p_IDAT->p_data);
-//     free(png_file->p_IDAT);
-//     free(png_file->p_IEND->p_data);
-//     free(png_file->p_IEND);
-
-// 	// Deallocate Memory
-// 	free(png_file);
-
-// 	return 0;
-
-// }

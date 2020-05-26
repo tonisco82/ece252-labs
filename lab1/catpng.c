@@ -26,7 +26,6 @@ int main(int argc, char *argv[]) {
     }
 
 	// **Fill Initial Array of PNG Structs**
-	printf("Argc is %d\n", argc);
 	simple_PNG_p imgs[argc-1];
 
    	int get_png_status = 1;
@@ -74,7 +73,7 @@ int main(int argc, char *argv[]) {
    	}
 	
    	U32 width = calcs[0]->width; //Should all be the same width
-	printf("%u height %u width of all.png\n", height, width);
+	//printf("%u height %u width of all.png\n", height, width);
 
 	// **Inflate the Compressed Data and Append to Each Other**
 
@@ -100,7 +99,7 @@ int main(int argc, char *argv[]) {
 	    }
 
 	    len_tot += len_inf;  //keep running total for buffer offset on next data inflate
-		printf("%lu len_inf %lu len_tot\n", len_inf, len_tot);
+		//printf("%lu len_inf %lu len_tot\n", len_inf, len_tot);
     }
 
 	// **Deflate the Uncompressed Data**
@@ -119,9 +118,6 @@ int main(int argc, char *argv[]) {
     }
     free(catbuf);
 
-    // now we should have the proper compressed IDAT data
-    //from now on use initial png to create new one
-
 	// **Creating new PNG Struct**
 
     simple_PNG_p newpng = (simple_PNG_p)malloc(sizeof(struct simple_PNG));
@@ -137,10 +133,6 @@ int main(int argc, char *argv[]) {
 	new_header->interlace = calcs[0]->interlace;
 	fill_data_IHDR(new_header, newpng->p_IHDR);
 
-	//Test
-	get_data_IHDR((char *)newpng->p_IHDR->p_data, new_header);
-	printf("%u height %u width after converting back\n", new_header->height, new_header->width);
-
 	newpng->p_IDAT = (chunk_p)(malloc(sizeof(struct chunk)));
 	newpng->p_IDAT->length = (U32)len_def;
 	newpng->p_IDAT->type[0] = imgs[0]->p_IDAT->type[0];
@@ -154,14 +146,18 @@ int main(int argc, char *argv[]) {
 
    	write_png_file("all.png", newpng);
 
-	printf("Checking if result is a png: %d\n", is_png("./all.png"));
+	//printf("Checking if result is a png: %d\n", is_png("./all.png"));
 
 	for (int i=0; i<(argc-1); i++){  //loop to free memory
    		free_png(imgs[i]);
 		free(calcs[i]);
    	}
 	free(newdata);
+	free(newpng->p_IDAT);
+	free(newpng->p_IHDR->p_data);
+	free(newpng->p_IHDR);
 	free(newpng);
+	free(new_header);
 
    	return 0;
 }
