@@ -38,7 +38,8 @@ typedef struct chunk {
 /* note that there are 13 Bytes valid data, compiler will padd 3 bytes to make
    the structure 16 Bytes due to alignment. So do not use the size of this
    structure as the actual data size, use 13 Bytes (i.e DATA_IHDR_SIZE macro).
- */
+*/
+
 typedef struct data_IHDR {// IHDR chunk data 
     U32 width;        /* width in pixels, big endian   */
     U32 height;       /* height in pixels, big endian  */

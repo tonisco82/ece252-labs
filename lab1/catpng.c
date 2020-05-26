@@ -17,84 +17,68 @@
 #include "./starter/png_util/crc.c"
 #include "./starter/png_util/zutil.c"
 
-unsigned long crccheck (struct chunk* data){
-	// Length of the crc buffer
-	int len = data->length + 4;
-
-	// Declare crc buffer
-	char * restrict chunk_crc_data = (char *)malloc(len);
-
-	// Copy type field into buffer
-	strcpy(chunk_crc_data, (char *)data->type);
-	// Copy data field into buffer
-	for(int i=0;i<data->length;i++){
-		*(chunk_crc_data + 4 + i) = (char) *(data->p_data + i);
-	}
-
-	// Run crc comparison
-	unsigned long testcrc = crc((unsigned char *)chunk_crc_data, len);
-
-	// Test if crc is the same or not
-	if (testcrc != data->crc){
-		// Returns what the crc should be upon failure
-		return  testcrc;
-	}
-
-	return (unsigned long) 0;  //returns 0 for pass
-}
 
 int main(int argc, char *argv[]) {
 
-    if(argc <= 2) {
+    if(argc < 2) {
         printf("Usage example: ./catpng ./img1.png ./png/img2.png\n");
         return -1;
     }
 
+	// **Fill Initial Array of PNG Structs**
+	printf("Argc is %d\n", argc);
 	simple_PNG_p imgs[argc-1];
 
    	int get_png_status = 1;
 
    	for (int i=0; i<(argc-1); i++){
+		// Allocate memory for PNG struct, fill it with the data
 		imgs[i] = (simple_PNG_p) malloc(sizeof(struct simple_PNG));
    		get_png_status = get_png(argv[i+1], imgs[i]);
+
+		
    		if (get_png_status != 0) {
+			// PNG struct creation failed
 			printf("%s: failed to get png\n", argv[i+1]);
 
-			for(int j=0;j<=i;j++){
-				free(imgs[j]);
+			for(int j=0;j<i;j++){
+				free_png(imgs[j]);
 			}
+			free(imgs[i]);
 
 	    	return get_png_status;
 		} 
    	}
 
-   	int height = 0;
-   	int width = 0;
+	// **Fill Initial Array of Header Data**
+
+   	U32 height = 0;
    	data_IHDR_p calcs[argc-1];
 
    	for (int i=0; i<(argc-1); i++){  //loop get IHDR data for dimensions
 	   	calcs[i] = (data_IHDR_p)malloc(sizeof(struct data_IHDR));
    		int get_data_IHDR_status = get_data_IHDR((char*) imgs[i]->p_IHDR->p_data, calcs[i]);
+
 		if (get_data_IHDR_status != 0) {
-
 			printf("%s: failed to get IHDR data\n", argv[i+1]);
-
 			for(int j=0;j<=i;j++){
 				free(calcs[j]);
 			}
 			for(int j=0;j<=(argc-1);j++){
-				free(imgs[j]);
+				free_png(imgs[j]);
 			}
-
 	    	return get_png_status;
-		}  	
+		}
+
    		height += calcs[i]->height;
    	}
 	
-   	width = calcs[0]->width; //Should all be the same width
-	printf("%d height %d width\n", height, width);
+   	U32 width = calcs[0]->width; //Should all be the same width
+	printf("%u height %u width of all.png\n", height, width);
 
-	U8* catbuf = malloc(height*((width*4)+1));
+	// **Inflate the Compressed Data and Append to Each Other**
+
+	U8* catbuf = malloc(height*((width*4)+1)); //Buffer
 	U64 len_def = 0;      /* compressed data length                        */
     U64 len_inf = 0;      /* uncompressed data length                      */
     U64 len_tot = 0;      //running tally of total length
@@ -104,94 +88,80 @@ int main(int argc, char *argv[]) {
    		len_def = imgs[i]->p_IDAT->length;
    		len_inf = 0;
    		ret = mem_inf(catbuf+len_tot, &len_inf, imgs[i]->p_IDAT->p_data, len_def); //automatically concatenate inflated data to buffer
-	    if (ret !=0){
-	        printf(stderr,"mem_def failed. ret = %d.\n", ret);
-
+	    
+		if (ret !=0){
+	        printf("StdError: mem_def failed. ret = %d.\n", ret);
 			for(int j=0;j<=(argc-1);j++){
-				free(imgs[j]);
+				free_png(imgs[j]);
 				free(calcs[j]);
 			}
 
 	        return ret;
 	    }
+
 	    len_tot += len_inf;  //keep running total for buffer offset on next data inflate
 		printf("%lu len_inf %lu len_tot\n", len_inf, len_tot);
     }
 
+	// **Deflate the Uncompressed Data**
+
     U8* newdata = malloc(height*((width*4)+1)); //new data buffer
 	U64 size = (height*((width*4)+1));
 
-    //deflate data to new data buffer
     ret = mem_def(newdata, &len_def, catbuf, size, Z_DEFAULT_COMPRESSION);
     if (ret !=0){
-        fprintf(stderr,"mem_def failed. ret = %d.\n", ret);
+        printf("StdError: mem_def failed. ret = %d.\n", ret);
 		for(int j=0;j<=(argc-1);j++){
-			free(imgs[j]);
+			free_png(imgs[j]);
 			free(calcs[j]);
 		}
         return ret;
     }
     free(catbuf);
+
     // now we should have the proper compressed IDAT data
     //from now on use initial png to create new one
-    U32 newheight = (U32)height;
 
-    simple_PNG_p newpng = imgs[0];
-	//NOTE: CODE WORKS UP TO THIS POINT TO THE BEST OF MY KNOWLEDGE, NEED TO FIX DATA UPDATE AND WRITE
-	//DATA UPDATING (BELOW) COMMENTED O TEST REWRITING INITIAL FILE
-	/*
-    *(newpng->p_IHDR->p_data+4) = htonl(newheight); 
-    newpng->p_IDAT->p_data = newdata;
-    newpng->p_IDAT->length = len_def;
-    newpng->p_IDAT->crc = crccheck(newpng->p_IDAT);
-    newpng->p_IHDR->crc = crccheck(newpng->p_IHDR);
-	*/
-    //we should now have newpng with all of the data we need
-    //now adjust data for easy writing
-    //htonl(newpng->p_IDAT->length);
-    //htonl(newpng->p_IDAT->crc);
-    //htonl(newpng->p_IHDR->length);
-    //htonl(newpng->p_IHDR->crc);
+	// **Creating new PNG Struct**
 
-   	FILE *fpw;
-	fpw = fopen ("all.png", "wb+");
-	//write png header
-	int png_header[8] = {-119, 80, 78, 71, 13, 10, 26, 10};
-	for (int i=0; i<8; i++){
-		fwrite(&png_header[i], 1, 1, fpw);  //this works for sure
-	}
+    simple_PNG_p newpng = (simple_PNG_p)malloc(sizeof(struct simple_PNG));
 
-	//write IHDR
-	fwrite(&(newpng->p_IHDR->length), sizeof(newpng->p_IHDR->length), 1, fpw); //pretty sure the size and type are writing properly
-	fwrite(&(newpng->p_IHDR->type[0]), sizeof(newpng->p_IHDR->type), 1, fpw);
-	fwrite(newpng->p_IHDR->p_data, newpng->p_IHDR->length, 1, fpw);
-	fwrite(&(newpng->p_IHDR->crc), sizeof(newpng->p_IHDR->crc), 1, fpw);
+	newpng->p_IHDR = (chunk_p)malloc(sizeof(struct chunk));
+	data_IHDR_p new_header = malloc(sizeof(struct data_IHDR));
+	new_header->width = width;
+	new_header->height = height;
+	new_header->bit_depth = calcs[0]->bit_depth;
+	new_header->color_type = calcs[0]->color_type;
+	new_header->compression = calcs[0]->compression;
+	new_header->filter = calcs[0]->filter;
+	new_header->interlace = calcs[0]->interlace;
+	fill_data_IHDR(new_header, newpng->p_IHDR);
 
-	//write IDAT
-	fwrite(&(newpng->p_IDAT->length), sizeof(newpng->p_IDAT->length), 1, fpw); 
-	fwrite(&(newpng->p_IDAT->type[0]), sizeof(newpng->p_IDAT->type), 1, fpw);
-	fwrite(newpng->p_IDAT->p_data, newpng->p_IDAT->length, 1, fpw);
-	fwrite(&(newpng->p_IDAT->crc), sizeof(newpng->p_IDAT->crc), 1, fpw);
+	//Test
+	get_data_IHDR((char *)newpng->p_IHDR->p_data, new_header);
+	printf("%u height %u width after converting back\n", new_header->height, new_header->width);
 
-	//write IEND
-	fwrite(&(newpng->p_IEND->length), sizeof(newpng->p_IEND->length), 1, fpw); 
-	fwrite(&(newpng->p_IEND->type[0]), sizeof(newpng->p_IEND->type), 1, fpw);
-	fwrite(newpng->p_IEND->p_data, newpng->p_IEND->length, 1, fpw);
-	fwrite(&(newpng->p_IEND->crc), sizeof(newpng->p_IEND->crc), 1, fpw);
-	
-	fclose(fpw);
+	newpng->p_IDAT = (chunk_p)(malloc(sizeof(struct chunk)));
+	newpng->p_IDAT->length = (U32)len_def;
+	newpng->p_IDAT->type[0] = imgs[0]->p_IDAT->type[0];
+	newpng->p_IDAT->type[1] = imgs[0]->p_IDAT->type[1];
+	newpng->p_IDAT->type[2] = imgs[0]->p_IDAT->type[2];
+	newpng->p_IDAT->type[3] = imgs[0]->p_IDAT->type[3];
+	newpng->p_IDAT->p_data = newdata;
+	newpng->p_IDAT->crc = crccheck(newpng->p_IDAT);
 
-	printf("%d\n", is_png("./all.png"));
+	newpng->p_IEND = imgs[0]->p_IEND; // Re-use same END data structure
+
+   	write_png_file("all.png", newpng);
+
+	printf("Checking if result is a png: %d\n", is_png("./all.png"));
 
 	for (int i=0; i<(argc-1); i++){  //loop to free memory
-   		free(calcs[i]);
-   		free(imgs[i]->p_IHDR->p_data);
-		free(imgs[i]->p_IHDR);
-   		free(imgs[i]->p_IDAT->p_data);
-		free(imgs[i]->p_IDAT);
-   		free(imgs[i]->p_IEND->p_data);
-		free(imgs[i]->p_IEND);
-   		free(imgs[i]);
+   		free_png(imgs[i]);
+		free(calcs[i]);
    	}
+	free(newdata);
+	free(newpng);
+
    	return 0;
 }
