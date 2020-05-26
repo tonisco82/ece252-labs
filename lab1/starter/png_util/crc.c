@@ -4,6 +4,8 @@
  * Reference: https://www.w3.org/TR/PNG-CRCAppendix.html
  */
 
+#pragma once
+
 /* Table of CRCs of all 8-bit messages. */
 unsigned long crc_table[256];
 

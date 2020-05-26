@@ -13,32 +13,6 @@
 #include "helpers.c"
 #include "./starter/png_util/crc.c"
 
-unsigned long crccheck (struct chunk* data){
-	// Length of the crc buffer
-	int len = data->length + 4;
-
-	// Declare crc buffer
-	char * restrict chunk_crc_data = (char *)malloc(len);
-
-	// Copy type field into buffer
-	strcpy(chunk_crc_data, (char *)data->type);
-	// Copy data field into buffer
-	for(int i=0;i<data->length;i++){
-		*(chunk_crc_data + 4 + i) = (char) *(data->p_data + i);
-	}
-
-	// Run crc comparison
-	unsigned long testcrc = crc((unsigned char *)chunk_crc_data, len);
-
-	// Test if crc is the same or not
-	if (testcrc != data->crc){
-		// Returns what the crc should be upon failure
-		return  testcrc;
-	}
-
-	return (unsigned long) 0;  //returns 0 for pass
-}
-
 
 // Checks if the file is a png
 // Return Code:

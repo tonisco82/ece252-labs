@@ -9,8 +9,36 @@
 #include <stdint.h>
 #include <arpa/inet.h>
 #include "./starter/png_util/lab_png.h"
+#include "./starter/png_util/crc.c"
 
 #pragma once
+
+// Returns 0 on valid CRC, otherwise what the value should be.
+unsigned long crccheck (struct chunk* data){
+	// Length of the crc buffer
+	int len = data->length + 4;
+
+	// Declare crc buffer
+	char * restrict chunk_crc_data = (char *)malloc(len);
+
+	// Copy type field into buffer
+	strcpy(chunk_crc_data, (char *)data->type);
+	// Copy data field into buffer
+	for(int i=0;i<data->length;i++){
+		*(chunk_crc_data + 4 + i) = (char) *(data->p_data + i);
+	}
+
+	// Run crc comparison
+	unsigned long testcrc = crc((unsigned char *)chunk_crc_data, len);
+
+	// Test if crc is the same or not
+	if (testcrc != data->crc){
+		// Returns what the crc should be upon failure
+		return  testcrc;
+	}
+
+	return (unsigned long) 0;  //returns 0 for pass
+}
 
 // What the 8-Byte Header of the PNG should look like in integer format
 int png_header[8] = {-119, 80, 78, 71, 13, 10, 26, 10};
@@ -21,18 +49,23 @@ int is_png(char* file_path){
 
     int buffer_len = 8;
     int fread_status;
+    char* buffer = malloc(buffer_len*sizeof(char));
     
-    FILE *fp;
+    FILE *fp = fopen(file_path, "rb");
 
-    char buffer[buffer_len];
+    if(!fp){
+        // File doesn't exist
+        fclose(fp);
+        free(buffer);
+        return -1;
+    }
 
-    fp = fopen(file_path, "rb");
-
-    fread_status = fread(buffer, buffer_len, 1, fp);
+    fread_status = fread(buffer, buffer_len*sizeof(char), 1, fp);
 
     if(fread_status != 1) {
         // Error in reading the png file
         fclose(fp);
+        free(buffer);
         return -1;
     }
 
@@ -40,10 +73,12 @@ int is_png(char* file_path){
         if(buffer[i] != png_header[i]){
             // Not a PNG
             fclose(fp);
+            free(buffer);
             return 0;
         }
     }
 
+    free(buffer);
     fclose(fp);
     return 1;
 }
@@ -79,6 +114,63 @@ int get_data_IHDR(char* IHDR_chunk, data_IHDR_p data){
     return 0;
 }
 
+//Prints a string in hex form, used for testing
+void printStringInHex(U8 *var, unsigned int length){
+    for(int i=0;i<length;i++){
+        printf("%02x", *(var + i));
+    }
+    printf("\n");
+}
+
+// Fill Data IHDR
+int fill_data_IHDR(data_IHDR_p data, chunk_p destination){
+    destination->length = DATA_IHDR_SIZE;
+
+    destination->type[0] = (char) 'I';
+    destination->type[1] = (char) 'H';
+    destination->type[2] = (char) 'D';
+    destination->type[3] = (char) 'R';
+
+    destination->p_data = malloc(DATA_IHDR_SIZE);
+    memset (destination->p_data,'\0',DATA_IHDR_SIZE);
+
+    destination->crc = 0;
+
+    int offset = 0;
+
+    U32 width = htonl((unsigned int)data->width);
+    U32 height = htonl((unsigned int)data->height);
+
+    U32 *temp = (U32 *)destination->p_data;
+
+    *temp = width;
+    offset += sizeof(U32);
+
+    temp = (U32 *)(destination->p_data + offset);
+
+    *temp = height;
+    offset += sizeof(U32);
+
+    *(destination->p_data + offset) = data->bit_depth;
+    offset += sizeof(U8);
+
+    *(destination->p_data + offset) = data->color_type;
+    offset += sizeof(U8);
+
+    *(destination->p_data + offset) = data->compression;
+    offset += sizeof(U8);
+
+    *(destination->p_data + offset) = data->filter;
+    offset += sizeof(U8);
+
+    *(destination->p_data + offset) = data->interlace;
+    offset += sizeof(data->interlace);
+
+    destination->crc = crccheck(destination);
+
+    return 0;
+}
+
 // Takes a file path to a png, and an offset inside the file.
 // Returns a chunk in the chunk data structure (out parameter)
 // Return values:
@@ -90,6 +182,12 @@ int get_chunk(chunk_p out, char* file_path, long *offset){
 
     // Open file at location
     FILE *fp = fopen(file_path, "rb");
+
+    if(!fp){
+        // File doesn't exist
+        fclose(fp);
+        return -1;
+    }
 
     fseek(fp, *offset, SEEK_SET); 
     //Note: SEEK_SET is from beginning of file
@@ -212,58 +310,73 @@ int get_png(char* file_path, struct simple_PNG* png) {
     return result;
 }
 
-// int main(int argc, char *argv[]) {
-//     // Input checking
-//     if(argc != 2) {
-//         printf("Usage example: ./findpng .\n");
-//         return -1;
-//     }
 
-//     	//Declare png "object"
-// 	simple_PNG_p png_file = (simple_PNG_p) malloc(sizeof(struct simple_PNG));
+int write_png_file (char* file_path, struct simple_PNG* newpng){
+    FILE *fpw;
+	fpw = fopen (file_path, "wb+");
 
-//     // Format the png
-//     int png_info_status = get_png(argv[1], png_file);
+    if(!fpw){
+        // File doesn't exist
+        fclose(fpw);
+        return -1;
+    }
 
-//     printf("PNG_INFO_Return value: %d\n", png_info_status);
+	//write png header
+	for (int i=0; i<8; i++){
+		fwrite(&png_header[i], 1, 1, fpw);  //this works for sure
+	}
 
+    unsigned int len = 0;
+    unsigned long crc = 0;
 
+	//write IHDR
+    len = htonl(newpng->p_IHDR->length);
+    crc = crccheck(newpng->p_IHDR);
+    if(crc == 0){
+        crc = newpng->p_IHDR->crc;
+    }
+    crc = htonl(crc);
+	fwrite(&(len), CHUNK_LEN_SIZE, 1, fpw);
+	fwrite(&(newpng->p_IHDR->type[0]), CHUNK_TYPE_SIZE, 1, fpw);
+	fwrite(newpng->p_IHDR->p_data, newpng->p_IHDR->length, 1, fpw);
+	fwrite(&(crc), CHUNK_CRC_SIZE, 1, fpw);
 
+	//write IDAT
+    len = htonl(newpng->p_IDAT->length);
+    crc = crccheck(newpng->p_IDAT);
+    if(crc == 0){
+        crc = newpng->p_IDAT->crc;
+    }
+    crc = htonl(crc);
+	fwrite(&(len), CHUNK_LEN_SIZE, 1, fpw);
+	fwrite(&(newpng->p_IDAT->type[0]), CHUNK_TYPE_SIZE, 1, fpw);
+	fwrite(newpng->p_IDAT->p_data, newpng->p_IDAT->length, 1, fpw);
+	fwrite(&(crc), CHUNK_CRC_SIZE, 1, fpw);
 
-// 	if (png_info_status == 0 || png_info_status == 2){
-        
-//         // Format the Header Data
-//         data_IHDR_p IHDR_data = (data_IHDR_p)malloc(sizeof(struct data_IHDR));
-//         int get_data_IHDR_status = get_data_IHDR((char*) png_file->p_IHDR->p_data, IHDR_data);
-//         if (get_data_IHDR_status != 0) {
-//             printf("%s: Not a PNG file\n", argv[1]);
-//             free(IHDR_data);
-//             return -1;
-//         }
+	//write IEND
+    len = htonl(newpng->p_IEND->length);
+    crc = crccheck(newpng->p_IEND);
+    if(crc == 0){
+        crc = newpng->p_IEND->crc;
+    }
+    crc = htonl(crc);
+	fwrite(&(len), CHUNK_LEN_SIZE, 1, fpw);
+	fwrite(&(newpng->p_IEND->type[0]), CHUNK_TYPE_SIZE, 1, fpw);
+	fwrite(newpng->p_IEND->p_data, newpng->p_IEND->length, 1, fpw);
+	fwrite(&(crc), CHUNK_CRC_SIZE, 1, fpw);
+	
+	fclose(fpw);
 
-//         printf("Width: %u\n", IHDR_data->width);
-//         printf("Height: %u\n", IHDR_data->height);
-//         printf("BitDepth: %u\n", IHDR_data->bit_depth);
-//         printf("Color Type: %u\n", IHDR_data->color_type);
-//         printf("Compression: %u\n", IHDR_data->compression);
-//         printf("Filter: %u\n", IHDR_data->filter);
-//         printf("Interlace: %u\n", IHDR_data->interlace);
+    return 0;
+}
 
-
-// 		// Info was fine, and thus still has memory allocated
-// 		free(png_file->p_IHDR->p_data);
-// 		free(png_file->p_IHDR);
-// 		free(png_file->p_IDAT->p_data);
-// 		free(png_file->p_IDAT);
-// 		free(png_file->p_IEND->p_data);
-// 		free(png_file->p_IEND);
-
-//         free(IHDR_data);
-// 	}
-
-// 	// Deallocate Memory
-// 	free(png_file);
-
-//     return 0;
-// }
-
+int free_png(struct simple_PNG* png_file) {
+    free(png_file->p_IHDR->p_data);
+    free(png_file->p_IHDR);
+    free(png_file->p_IDAT->p_data);
+    free(png_file->p_IDAT);
+    free(png_file->p_IEND->p_data);
+    free(png_file->p_IEND);
+    free(png_file);
+    return 0;
+}
