@@ -14,8 +14,8 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include "helpers.c"
-#include "./starter/png_util/crc.c"
-#include "./starter/png_util/zutil.c"
+#include "./png_util/crc.c"
+#include "./png_util/zutil.c"
 
 
 int main(int argc, char *argv[]) {
