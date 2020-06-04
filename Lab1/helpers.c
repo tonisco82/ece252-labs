@@ -8,8 +8,8 @@
 #include <string.h>
 #include <stdint.h>
 #include <arpa/inet.h>
-#include "./starter/png_util/lab_png.h"
-#include "./starter/png_util/crc.c"
+#include "./png_util/lab_png.h"
+#include "./png_util/crc.c"
 
 #pragma once
 
