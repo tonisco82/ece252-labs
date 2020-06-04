@@ -300,9 +300,9 @@ int multithread (int threads, int numpicture){
 	}
 
 	//cleanup
-    free(p_tids);
 	for (int i=0; i<threads-1; i++) {
         free(res[i]);
+		free(p_tids[i]);
     }
     ///////////////////////////////////////////////////////////
    	//copied from catbuf, used to concatenate array of pngs
@@ -415,7 +415,6 @@ int multithread (int threads, int numpicture){
 
 
 void* retrieve(void*data){
-	printf("why\n");
 	threadargs_p args = (struct threadargs*) data;
 	CURL *curl_handle;
     CURLcode res;
@@ -423,7 +422,6 @@ void* retrieve(void*data){
 	int* ret = malloc(sizeof(int));
 	*ret = 0; //track how many packets retrieved
 	char file[30];
-	printf("%d\n", args->threadid);
 	snprintf(file, 30, "%d.png", args->threadid);
 	////////////////////////////////////
 	//curl setup   
@@ -471,7 +469,6 @@ void* retrieve(void*data){
     curl_easy_cleanup(curl_handle);
     curl_global_cleanup();
     recv_buf_cleanup(&recv_buf);
-	free(args);
 	remove(file);
 	return (void*) ret;
 }
