@@ -115,7 +115,7 @@ size_t write_cb_curl3(char *p_recv, size_t size, size_t nmemb, void *p_userdata)
         p->max_size = new_size;
     }
 
-    memcpy(p->buf + p->size, p_recv, realsize); /*copy data from libcurl*/
+    memcpy(p->buf, p_recv, realsize); /*copy data from libcurl*/
     p->size += realsize;
     p->buf[p->size] = 0;
 
@@ -177,7 +177,7 @@ int write_file(const char *path, const void *in, size_t len)
         return -1;
     }
 
-    fp = fopen(path, "wb");
+    fp = fopen(path, "wb+");
     if (fp == NULL) {
         perror("fopen");
         return -2;

@@ -77,8 +77,9 @@ int singlethread (int numpicture){
    	int retrieved = 0; //num unique pieces obtained
    	char url[256];
    	strcpy(url, IMG_URL);
-   	url[31] = (char)(numpicture + '0');
+   	url[44] = (char)(numpicture + '0');
    	//curl stuff
+	printf("%s\n", url);
     CURL *curl_handle;
     CURLcode res;
     RECV_BUF recv_buf;
@@ -116,9 +117,10 @@ int singlethread (int numpicture){
 	        		recv_buf.size, recv_buf.buf, recv_buf.seq);
 	    }
 	    if(!imgs[recv_buf.seq]->filled){
-	    	write_file(DUMMYFILE, recv_buf.buf, recv_buf.size);
-	    	get_png(DUMMYFILE, imgs[recv_buf.seq]);
+	    	write_file(DUMMYFILE, recv_buf.buf, recv_buf.size); //write data retrieved to intermediate file
+	    	get_png(DUMMYFILE, imgs[recv_buf.seq]); //process data while server sleeps
 	    	retrieved++;
+			printf("%d retrieved", retrieved);
 	    }
 	}
 
@@ -238,6 +240,184 @@ int singlethread (int numpicture){
 }
 
 int multithread (int threads, int numpicture){
-	return 0;
+	
+   	simple_PNG_p imgs[50];
+
+   	for (int i=0; i<50; i++){
+		// Allocate memory for PNG struct
+		imgs[i] = (simple_PNG_p) malloc(sizeof(struct simple_PNG));
+   		imgs[i]->p_IHDR = NULL;
+   		imgs[i]->p_IDAT = NULL;
+   		imgs[i]->p_IEND = NULL;
+   		imgs[i]->filled = 0;
+   		imgs[i]->busy = 0;
+   	}
+///////////////////////////////////////////////////////////////////////below needs to become threaded
+
+   	//////////////////////////////////////////////////////////////
+   	//Set up cURL and retrieve images
+   	int retrieved = 0; //num unique pieces obtained
+   	char url[256];
+   	strcpy(url, IMG_URL);
+   	url[44] = (char)(numpicture + '0');
+   	//curl stuff
+	printf("%s\n", url);
+    CURL *curl_handle;
+    CURLcode res;
+    RECV_BUF recv_buf;
+    
+    recv_buf_init(&recv_buf, BUF_SIZE);
+    curl_global_init(CURL_GLOBAL_DEFAULT);
+    curl_handle = curl_easy_init();
+
+    if (curl_handle == NULL) {
+        fprintf(stderr, "curl_easy_init: returned NULL\n");
+        return 1;
+    }
+    /* specify URL to get */
+    curl_easy_setopt(curl_handle, CURLOPT_URL, url);
+    /* register write call back function to process received data */
+    curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, write_cb_curl3); 
+    /* user defined data structure passed to the call back function */
+    curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&recv_buf);
+    /* register header call back function to process received header data */
+    curl_easy_setopt(curl_handle, CURLOPT_HEADERFUNCTION, header_cb_curl); 
+    /* user defined data structure passed to the call back function */
+    curl_easy_setopt(curl_handle, CURLOPT_HEADERDATA, (void *)&recv_buf);
+    /* some servers requires a user-agent field */
+    curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
+
+    /////////////////////////////////////////////////////
+    //Loop and retrieve data
+    while (retrieved < 50){
+	    res = curl_easy_perform(curl_handle);
+	    if( res != CURLE_OK) {
+	        fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+	    } else {
+	         //dummy for debug
+			printf("%lu bytes received in memory %p, seq=%d.\n", \
+	        		recv_buf.size, recv_buf.buf, recv_buf.seq);
+	    }
+	    if(!imgs[recv_buf.seq]->filled){
+	    	write_file(DUMMYFILE, recv_buf.buf, recv_buf.size); //write data retrieved to intermediate file
+	    	get_png(DUMMYFILE, imgs[recv_buf.seq]); //process data while server sleeps
+	    	retrieved++;
+			printf("%d retrieved", retrieved);
+	    }
+	}
+
+	////////////////////////////////////////////////////
+    /* cleaning up */
+    curl_easy_cleanup(curl_handle);
+    curl_global_cleanup();
+    recv_buf_cleanup(&recv_buf);
+
+    ///////////////////////////////////////////////////////////
+   	//copied from catbuf, used to concatenate array of pngs
+
+   	U32 height = 0;
+   	data_IHDR_p calcs[50];
+
+   	for (int i=0; i<50; i++){  //loop get IHDR data for dimensions
+	   	calcs[i] = (data_IHDR_p)malloc(sizeof(struct data_IHDR));
+   		int get_data_IHDR_status = get_data_IHDR((char*) imgs[i]->p_IHDR->p_data, calcs[i]);
+
+		if (get_data_IHDR_status != 0) {
+			printf("strip %d: failed to get IHDR data\n", i);
+			for(int j=0;j<=i;j++){
+				free(calcs[j]);
+			}
+			for(int j=0;j<50;j++){
+				free_png(imgs[j]);
+			}
+	    	return -1;
+		}
+
+   		height += calcs[i]->height;
+   	}
+	
+   	U32 width = calcs[0]->width; // Assumes all be the same width
+
+	// **Inflate the Compressed Data and Append to Each Other**
+
+	U8* catbuf = malloc(height*((width*4)+1)); //Buffer
+	U64 len_def = 0;      /* compressed data length                        */
+    U64 len_inf = 0;      /* uncompressed data length                      */
+    U64 len_tot = 0;      //running tally of total length
+    int ret = 0;        //debug param
+
+   	for (int i=0; i<50; i++){ //loop inflate data
+   		len_def = imgs[i]->p_IDAT->length;
+   		len_inf = 0;
+   		ret = mem_inf(catbuf+len_tot, &len_inf, imgs[i]->p_IDAT->p_data, len_def); //automatically concatenate inflated data to buffer
+	    
+		if (ret !=0){
+	        printf("StdError: mem_def failed. ret = %d.\n", ret);
+			for(int j=0;j<50;j++){
+				free_png(imgs[j]);
+				free(calcs[j]);
+			}
+
+	        return ret;
+	    }
+
+	    len_tot += len_inf;  //keep running total for buffer offset on next data inflate
+    }
+
+	// **Deflate the Uncompressed Data**
+
+    U8* newdata = malloc(height*((width*4)+1)); //new data buffer
+	U64 size = (height*((width*4)+1));
+
+    ret = mem_def(newdata, &len_def, catbuf, size, Z_DEFAULT_COMPRESSION);
+    if (ret !=0){
+        printf("StdError: mem_def failed. ret = %d.\n", ret);
+		for(int j=0;j<50;j++){
+			free_png(imgs[j]);
+			free(calcs[j]);
+		}
+        return ret;
+    }
+    free(catbuf);
+
+	// **Creating new PNG Struct**
+
+    simple_PNG_p newpng = (simple_PNG_p)malloc(sizeof(struct simple_PNG));
+
+	newpng->p_IHDR = (chunk_p)malloc(sizeof(struct chunk));
+	data_IHDR_p new_header = malloc(sizeof(struct data_IHDR));
+	new_header->width = width;
+	new_header->height = height;
+	new_header->bit_depth = calcs[0]->bit_depth;
+	new_header->color_type = calcs[0]->color_type;
+	new_header->compression = calcs[0]->compression;
+	new_header->filter = calcs[0]->filter;
+	new_header->interlace = calcs[0]->interlace;
+	fill_data_IHDR(new_header, newpng->p_IHDR);
+
+	newpng->p_IDAT = (chunk_p)(malloc(sizeof(struct chunk)));
+	newpng->p_IDAT->length = (U32)len_def;
+	newpng->p_IDAT->type[0] = imgs[0]->p_IDAT->type[0];
+	newpng->p_IDAT->type[1] = imgs[0]->p_IDAT->type[1];
+	newpng->p_IDAT->type[2] = imgs[0]->p_IDAT->type[2];
+	newpng->p_IDAT->type[3] = imgs[0]->p_IDAT->type[3];
+	newpng->p_IDAT->p_data = newdata;
+	newpng->p_IDAT->crc = crccheck(newpng->p_IDAT);
+
+	newpng->p_IEND = imgs[0]->p_IEND; // Re-use same END data structure
+
+   	write_png_file("all.png", newpng);
+
+	for (int i=0; i<50; i++){  //loop to free memory
+   		free_png(imgs[i]);
+		free(calcs[i]);
+   	}
+	free(newdata);
+	free(newpng->p_IDAT);
+	free(newpng->p_IHDR->p_data);
+	free(newpng->p_IHDR);
+	free(newpng);
+	free(new_header);
+   	return 0;
 }
 
