@@ -1,6 +1,6 @@
 CFLAGS?=-std=c99 -D_GNU_SOURCE -Wall -O2
 CC=gcc
-LDLIBS = -lcurl -lz # "curl-config --libs" output 
+LDLIBS = -lcurl -lz -pthread # "curl-config --libs" output 
 
 
 PASTER = paster

@@ -11,6 +11,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <curl/curl.h>
+#include <pthread.h>
 #include "helpers.c"
 #include "main_write_header_cb.c"
 #include "crc.c"
@@ -21,12 +22,20 @@
 #define ECE252_HEADER "X-Ece252-Fragment: "
 #define BUF_SIZE 1048576  /* 1024*1024 = 1M */
 #define BUF_INC  524288   /* 1024*512  = 0.5M */
-#define DUMMYFILE "dummy.png"
+#define DUMMYFILE "dummy0.png"
 static unsigned int numthreads = 1; //default
 static unsigned int numpicture = 1; //default
+typedef struct threadargs {
+    char url[256]; 
+	int threadid;
+} *threadargs_p;
+unsigned int finishedretrieval = 0;
+simple_PNG_p imgs[50];
+
 
 int singlethread (int numpicture);
 int multithread (int threads, int numpicture);
+void* retrieve (void* data);
 
 int main(int argc, char *argv[]) { //get args, call function
 	int c;
@@ -61,8 +70,6 @@ int main(int argc, char *argv[]) { //get args, call function
 
 int singlethread (int numpicture){
 
-   	simple_PNG_p imgs[50];
-
    	for (int i=0; i<50; i++){
 		// Allocate memory for PNG struct
 		imgs[i] = (simple_PNG_p) malloc(sizeof(struct simple_PNG));
@@ -79,7 +86,6 @@ int singlethread (int numpicture){
    	strcpy(url, IMG_URL);
    	url[44] = (char)(numpicture + '0');
    	//curl stuff
-	printf("%s\n", url);
     CURL *curl_handle;
     CURLcode res;
     RECV_BUF recv_buf;
@@ -120,7 +126,7 @@ int singlethread (int numpicture){
 	    	write_file(DUMMYFILE, recv_buf.buf, recv_buf.size); //write data retrieved to intermediate file
 	    	get_png(DUMMYFILE, imgs[recv_buf.seq]); //process data while server sleeps
 	    	retrieved++;
-			printf("%d retrieved", retrieved);
+			printf("%d retrieved\n", retrieved);
 	    }
 	}
 
@@ -236,12 +242,11 @@ int singlethread (int numpicture){
 	free(newpng->p_IHDR);
 	free(newpng);
 	free(new_header);
+	remove(DUMMYFILE);
    	return 0;
 }
 
 int multithread (int threads, int numpicture){
-	
-   	simple_PNG_p imgs[50];
 
    	for (int i=0; i<50; i++){
 		// Allocate memory for PNG struct
@@ -252,7 +257,12 @@ int multithread (int threads, int numpicture){
    		imgs[i]->filled = 0;
    		imgs[i]->busy = 0;
    	}
-///////////////////////////////////////////////////////////////////////below needs to become threaded
+	pthread_t * p_tids[threads-1];
+	for(int i=0; i<threads-1; i++){
+		p_tids[i] = malloc(sizeof(pthread_t));
+	}
+	threadargs_p  input[threads-1];
+	int * res [threads-1];
 
    	//////////////////////////////////////////////////////////////
    	//Set up cURL and retrieve images
@@ -260,58 +270,40 @@ int multithread (int threads, int numpicture){
    	char url[256];
    	strcpy(url, IMG_URL);
    	url[44] = (char)(numpicture + '0');
-   	//curl stuff
-	printf("%s\n", url);
-    CURL *curl_handle;
-    CURLcode res;
-    RECV_BUF recv_buf;
-    
-    recv_buf_init(&recv_buf, BUF_SIZE);
-    curl_global_init(CURL_GLOBAL_DEFAULT);
-    curl_handle = curl_easy_init();
 
-    if (curl_handle == NULL) {
-        fprintf(stderr, "curl_easy_init: returned NULL\n");
-        return 1;
+   	for (int i=0; i<threads-1; i++){ //spawn threads up to threads-1 (last is parent)
+	   	input[i]->threadid = i;
+		url[14] = (char)('1'+ (i & 3)); //distribute work among all 3 servers
+		strcpy(input[i]->url, url);
+		printf("%s\n", input[i]->url);
+		pthread_create(p_tids[i], NULL, retrieve, input[i]);
+	}
+	bool flag = false;
+	while (finishedretrieval == 0){
+		flag = true;
+		for(int i=0; i<50; i++){
+			if (!(imgs[i]->filled)){
+				flag = false;
+			}
+		}
+		if (flag){
+			finishedretrieval = 1;
+		}
+	}
+	for (int i=0; i<threads-1; i++) {
+        pthread_join(*p_tids[i], (void **)&(res[i]));
+        retrieved += *res[i];
     }
-    /* specify URL to get */
-    curl_easy_setopt(curl_handle, CURLOPT_URL, url);
-    /* register write call back function to process received data */
-    curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, write_cb_curl3); 
-    /* user defined data structure passed to the call back function */
-    curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&recv_buf);
-    /* register header call back function to process received header data */
-    curl_easy_setopt(curl_handle, CURLOPT_HEADERFUNCTION, header_cb_curl); 
-    /* user defined data structure passed to the call back function */
-    curl_easy_setopt(curl_handle, CURLOPT_HEADERDATA, (void *)&recv_buf);
-    /* some servers requires a user-agent field */
-    curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
-
-    /////////////////////////////////////////////////////
-    //Loop and retrieve data
-    while (retrieved < 50){
-	    res = curl_easy_perform(curl_handle);
-	    if( res != CURLE_OK) {
-	        fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
-	    } else {
-	         //dummy for debug
-			printf("%lu bytes received in memory %p, seq=%d.\n", \
-	        		recv_buf.size, recv_buf.buf, recv_buf.seq);
-	    }
-	    if(!imgs[recv_buf.seq]->filled){
-	    	write_file(DUMMYFILE, recv_buf.buf, recv_buf.size); //write data retrieved to intermediate file
-	    	get_png(DUMMYFILE, imgs[recv_buf.seq]); //process data while server sleeps
-	    	retrieved++;
-			printf("%d retrieved", retrieved);
-	    }
+	if(retrieved != 50){
+		printf("error in data retrieval, not all packets successfully retrieved");
+		return -1;
 	}
 
-	////////////////////////////////////////////////////
-    /* cleaning up */
-    curl_easy_cleanup(curl_handle);
-    curl_global_cleanup();
-    recv_buf_cleanup(&recv_buf);
-
+	//cleanup
+    free(p_tids);
+	for (int i=0; i<threads-1; i++) {
+        free(res[i]);
+    }
     ///////////////////////////////////////////////////////////
    	//copied from catbuf, used to concatenate array of pngs
 
@@ -421,3 +413,65 @@ int multithread (int threads, int numpicture){
    	return 0;
 }
 
+
+void* retrieve(void*data){
+	printf("why\n");
+	threadargs_p args = (struct threadargs*) data;
+	CURL *curl_handle;
+    CURLcode res;
+    RECV_BUF recv_buf;
+	int* ret = malloc(sizeof(int));
+	*ret = 0; //track how many packets retrieved
+	char file[30];
+	printf("%d\n", args->threadid);
+	snprintf(file, 30, "%d.png", args->threadid);
+	////////////////////////////////////
+	//curl setup   
+    recv_buf_init(&recv_buf, BUF_SIZE);
+    curl_global_init(CURL_GLOBAL_DEFAULT);
+    curl_handle = curl_easy_init();
+    if (curl_handle == NULL) {
+        fprintf(stderr, "curl_easy_init: returned NULL\n");
+        return  ((void*) 1);
+    }
+    /* specify URL to get */
+    curl_easy_setopt(curl_handle, CURLOPT_URL, args->url);
+    /* register write call back function to process received data */
+    curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, write_cb_curl3); 
+    /* user defined data structure passed to the call back function */
+    curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&recv_buf);
+    /* register header call back function to process received header data */
+    curl_easy_setopt(curl_handle, CURLOPT_HEADERFUNCTION, header_cb_curl); 
+    /* user defined data structure passed to the call back function */
+    curl_easy_setopt(curl_handle, CURLOPT_HEADERDATA, (void *)&recv_buf);
+    /* some servers requires a user-agent field */
+    curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
+
+    /////////////////////////////////////////////////////
+    //Loop and retrieve data
+    while (finishedretrieval == 0){
+	    res = curl_easy_perform(curl_handle);
+	    if( res != CURLE_OK) {
+	        fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+	    } else {
+	         //dummy for debug
+			printf("%lu bytes received in memory %p, seq=%d.\n", \
+	        		recv_buf.size, recv_buf.buf, recv_buf.seq);
+	    }
+	    if(!imgs[recv_buf.seq]->filled){
+			imgs[recv_buf.seq]->filled = true;
+			write_file(file, recv_buf.buf, recv_buf.size); //write data retrieved to intermediate file
+			get_png(file, imgs[recv_buf.seq]); //process data while server sleeps
+			*ret = *ret +1;
+	    }
+	}
+
+	////////////////////////////////////////////////////
+    /* cleaning up */
+    curl_easy_cleanup(curl_handle);
+    curl_global_cleanup();
+    recv_buf_cleanup(&recv_buf);
+	free(args);
+	remove(file);
+	return (void*) ret;
+}
