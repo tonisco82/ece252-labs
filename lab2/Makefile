@@ -1,4 +1,4 @@
-CFLAGS?=-std=c99 -D_GNU_SOURCE -Wall -O2
+CFLAGS?=-std=c99 -D_GNU_SOURCE -Wall -O2 
 CC=gcc
 LDLIBS = -lcurl -lz -pthread # "curl-config --libs" output 
 

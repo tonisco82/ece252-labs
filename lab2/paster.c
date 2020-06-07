@@ -127,14 +127,15 @@ int singlethread (int numpicture){
 	        fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
 	    } else {
 	         //dummy for debug
-			printf("%lu bytes received in memory %p, seq=%d.\n", \
-	        		recv_buf.size, recv_buf.buf, recv_buf.seq);
+			//printf("%lu bytes received in memory %p, seq=%d.\n", recv_buf.size, recv_buf.buf, recv_buf.seq);
 	    }
 	    if(!imgs[recv_buf.seq]->filled){
-	    	write_file(DUMMYFILE, recv_buf.buf, recv_buf.size); //write data retrieved to intermediate file
-	    	get_png(DUMMYFILE, imgs[recv_buf.seq]); //process data while server sleeps
+	    	if(write_file(DUMMYFILE, recv_buf.buf, recv_buf.size) ||//write data retrieved to intermediate file
+	    	get_png(DUMMYFILE, imgs[recv_buf.seq])){ //process data while server sleeps
+				imgs[recv_buf.seq]->filled = 0;
+				continue;
+			}
 	    	retrieved++;
-			printf("%d retrieved\n", retrieved);
 	    }
 	}
 
@@ -289,9 +290,9 @@ void *get_data(void * arg){ //Subrountine to get the data
 	url[IMG_URL_SERVER_IND] = (char)((p_in->pthread_id % 3) + '1'); //Offset of 1 since the server number is 1,2, or 3
 
 	// Dummy File Name
-	char temp_file_name[DUMMYFILE_LEN];
-   	strcpy(temp_file_name, DUMMYFILE);
-   	temp_file_name[DUMMYFILE_IND] = (char)(p_in->pthread_id + '0');
+	char temp_file_name[30];
+	snprintf(temp_file_name, 30, "%d.png", p_in->pthread_id);
+   	//temp_file_name[DUMMYFILE_IND] = (char)(p_in->pthread_id + '0');
 
 	//** cURL More Setup **//
 	/* specify URL to get */
@@ -322,24 +323,27 @@ void *get_data(void * arg){ //Subrountine to get the data
 	        printf("curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
 	    } else {
 	         //Print how memory received
-			printf("%d:%lu bytes received in memory %p, seq=%d, filled=%d ", \
-	        		p_in->pthread_id, recv_buf.size, recv_buf.buf, recv_buf.seq, p_in->imagesRetrieved[recv_buf.seq]->filled);
+			//printf("%d:%lu bytes received in memory %p, seq=%d, filled=%d ", p_in->pthread_id, recv_buf.size, recv_buf.buf, recv_buf.seq, p_in->imagesRetrieved[recv_buf.seq]->filled);
 	    }
 
-	    if(p_in->imagesRetrieved[recv_buf.seq]->filled == 0){ //If not yet received
-			p_in->imagesRetrieved[recv_buf.seq]->filled = 1; //Set to received
+	    if(p_in->imagesRetrieved[recv_buf.seq]->filled == 0 && p_in->imagesRetrieved[recv_buf.seq]->busy == 0){ //If not yet received
+			p_in->imagesRetrieved[recv_buf.seq]->filled = 0; //Set to received
+			p_in->imagesRetrieved[recv_buf.seq]->busy = 1;
 
-			write_file(temp_file_name, recv_buf.buf, recv_buf.size); //write data retrieved to intermediate file
-	    	get_png(temp_file_name, p_in->imagesRetrieved[recv_buf.seq]); //process data while server sleeps
-
+			if (write_file(temp_file_name, recv_buf.buf, recv_buf.size) ||get_png(temp_file_name, p_in->imagesRetrieved[recv_buf.seq])){ //write data retrieved to intermediate file
+				 //process data while server sleeps
+				p_in->imagesRetrieved[recv_buf.seq]->filled = 0;  //redundancy check, had issue with failing data read, if fail, then repull data from server (dont mark done)
+				p_in->imagesRetrieved[recv_buf.seq]->busy = 0;
+				continue;
+			}
 			*(p_in->retrieved) += 1; //Increase total received counter by 1
-			printf(" NOT RECEIVED YET-Currently %d parts are retrieved\n", *(p_in->retrieved));
+			p_in->imagesRetrieved[recv_buf.seq]->busy = 0;
+			p_in->imagesRetrieved[recv_buf.seq]->filled = 1;
+			//printf(" NOT RECEIVED YET-Currently %d parts are retrieved\n", *(p_in->retrieved));
 	    }else{ //If received
-			printf(" ALREADY RECEIVED-image section %d is full: %d\n", recv_buf.seq, p_in->imagesRetrieved[recv_buf.seq]->filled);
+			//printf(" ALREADY RECEIVED-image section %d is full: %d\n", recv_buf.seq, p_in->imagesRetrieved[recv_buf.seq]->filled);
 		}
 	}
-
-	printf("%d: done finding images\n", p_in->pthread_id);
 
 	//** Cleanup **//
     curl_easy_cleanup(curl_handle);
@@ -388,23 +392,30 @@ int multithread (int threads, int numpicture){
 		pthread_create(pthread_ids + i, NULL, get_data, (void *) &thread_input_data[i]);
 	}
 
-	printf("Main thread, finished calling everything\n");
+	bool notdone = 1;
+	while (notdone){
+		notdone = 0;
+		for (int i=0; i<IMAGE_PARTS; i++){
+			if(img[i]->filled ==0 || img[i]->busy ==1){
+				notdone = 1;
+			}
+		}
+	}
 
 	for(int i=0;i<threads;i++){
 		pthread_join(pthread_ids[i], NULL);
+		usleep(10);
 	}
-
-	printf("Main thread, all data retrieved\n");
 
 	//**Make PNG from Result**
    	U32 height = 0;
    	data_IHDR_p calcs[IMAGE_PARTS];
 
    	for (int i=0; i<IMAGE_PARTS; i++){  //loop get IHDR data for dimensions
-	   	printf("On iteration %d\n", i);
-	   	calcs[i] = (data_IHDR_p)malloc(sizeof(struct data_IHDR));
+	   	calcs[i] = (data_IHDR_p) malloc(sizeof(struct data_IHDR));
+		calcs[i]->height = 0;
+		calcs[i]->width = 0;
    		int get_data_IHDR_status = get_data_IHDR((char*) img[i]->p_IHDR->p_data, calcs[i]);
-
 		if (get_data_IHDR_status != 0) {
 			printf("strip %d: failed to get IHDR data\n", i);
 			for(int j=0;j<=i;j++){
@@ -418,8 +429,6 @@ int multithread (int threads, int numpicture){
 
    		height += calcs[i]->height;
    	}
-
-	printf("LINE 413\n");
 	
    	U32 width = calcs[0]->width; // Assumes all be the same width
 
@@ -449,8 +458,6 @@ int multithread (int threads, int numpicture){
 	    len_tot += len_inf;  //keep running total for buffer offset on next data inflate
     }
 
-	printf("LINE 443\n");
-
 	// **Deflate the Uncompressed Data**
 
     U8* newdata = malloc(height*((width*4)+1)); //new data buffer
@@ -466,8 +473,6 @@ int multithread (int threads, int numpicture){
         return ret;
     }
     free(catbuf);
-
-	printf("LINE 461\n");
 
 		// **Creating new PNG Struct**
 
@@ -496,8 +501,6 @@ int multithread (int threads, int numpicture){
 	newpng->p_IEND = img[0]->p_IEND; // Re-use same END data structure
 
    	write_png_file("all.png", newpng);
-
-	printf("LINE 491\n");
 
 	//End of File Cleanup
 	free(pthread_ids);
@@ -554,8 +557,7 @@ void* retrieve(void*data){
 	        fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
 	    } else {
 	         //dummy for debug
-			printf("%lu bytes received in memory %p, seq=%d.\n", \
-	        		recv_buf.size, recv_buf.buf, recv_buf.seq);
+			//printf("%lu bytes received in memory %p, seq=%d.\n", recv_buf.size, recv_buf.buf, recv_buf.seq);
 	    }
 	    if(!imgs[recv_buf.seq]->filled){
 			imgs[recv_buf.seq]->filled = true;
