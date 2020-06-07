@@ -18,13 +18,21 @@
 #include "zutil.c"
 
 #define IMG_URL "http://ece252-1.uwaterloo.ca:2520/image?img=1"
+#define IMG_URL_SIZE 46
+#define IMG_URL_IMG_IND 44 //Index of part of string used to control which image
+#define IMG_URL_SERVER_IND 14 //Index of part of string used to control which server to use
 #define DUM_URL "https://example.com/"
 #define ECE252_HEADER "X-Ece252-Fragment: "
 #define BUF_SIZE 1048576  /* 1024*1024 = 1M */
 #define BUF_INC  524288   /* 1024*512  = 0.5M */
 #define DUMMYFILE "dummy0.png"
+#define DUMMYFILE_LEN 11
+#define DUMMYFILE_IND 5
+#define IMAGE_PARTS 50
+#define NUM_SERVERS 3
 static unsigned int numthreads = 1; //default
 static unsigned int numpicture = 1; //default
+
 typedef struct threadargs {
     char url[256]; 
 	int threadid;
@@ -50,7 +58,7 @@ int main(int argc, char *argv[]) { //get args, call function
             break;
         case 'n':
             numpicture = strtoul(optarg, NULL, 10);
-            if (numpicture < 1 || numpicture > 3) {
+            if (numpicture < 1 || numpicture > NUM_SERVERS) {
                 printf("%s: number of picture must be between 1 and 3 -- 'n'\n", argv[0]);
                 return -1;
             }
@@ -84,7 +92,7 @@ int singlethread (int numpicture){
    	int retrieved = 0; //num unique pieces obtained
    	char url[256];
    	strcpy(url, IMG_URL);
-   	url[44] = (char)(numpicture + '0');
+   	url[44] = (char)(numpicture + '0'); //44 is the offset required to change which image is being retrieved in the url
    	//curl stuff
     CURL *curl_handle;
     CURLcode res;
@@ -246,87 +254,172 @@ int singlethread (int numpicture){
    	return 0;
 }
 
-int multithread (int threads, int numpicture){
+typedef struct thread_data {
+	unsigned int* retrieved; //Number of data chunks retrieved
+	simple_PNG_p* imagesRetrieved; //Locations of where the data chunks are
+	int pthread_id;
+	int photo_num;
+}  thread_data_t;
 
-   	for (int i=0; i<50; i++){
-		// Allocate memory for PNG struct
-		imgs[i] = (simple_PNG_p) malloc(sizeof(struct simple_PNG));
-   		imgs[i]->p_IHDR = NULL;
-   		imgs[i]->p_IDAT = NULL;
-   		imgs[i]->p_IEND = NULL;
-   		imgs[i]->filled = 0;
-   		imgs[i]->busy = 0;
-   	}
-	pthread_t * p_tids[threads-1];
-	for(int i=0; i<threads-1; i++){
-		p_tids[i] = malloc(sizeof(pthread_t));
-	}
-	threadargs_p  input[threads-1];
-	int * res [threads-1];
+void *get_data(void * arg){ //Subrountine to get the data
+	//** Decode Input **//
+	thread_data_t *p_in = arg;
 
-   	//////////////////////////////////////////////////////////////
-   	//Set up cURL and retrieve images
-   	int retrieved = 0; //num unique pieces obtained
-   	char url[256];
+	//** cURL Setup **//
+	CURL *curl_handle;
+    CURLcode res;
+    RECV_BUF recv_buf;
+  
+    recv_buf_init(&recv_buf, BUF_SIZE);
+    curl_global_init(CURL_GLOBAL_DEFAULT);
+    curl_handle = curl_easy_init();
+    if (curl_handle == NULL) {
+        printf("Error: Thread %d-curl_easy_init: returned NULL\n", p_in->pthread_id);
+        return  NULL;
+    }
+
+	//** Variable Setup **//
+	int* ret = malloc(sizeof(int));
+	*ret = 0; //track how many packets retrieved
+
+	//	URL string
+	char url[IMG_URL_SIZE];
    	strcpy(url, IMG_URL);
-   	url[44] = (char)(numpicture + '0');
+   	url[IMG_URL_IMG_IND] = (char)(p_in->photo_num + '0');
+	url[IMG_URL_SERVER_IND] = (char)((p_in->pthread_id % 3) + '1'); //Offset of 1 since the server number is 1,2, or 3
 
-   	for (int i=0; i<threads-1; i++){ //spawn threads up to threads-1 (last is parent)
-	   	input[i]->threadid = i;
-		url[14] = (char)('1'+ (i & 3)); //distribute work among all 3 servers
-		strcpy(input[i]->url, url);
-		printf("%s\n", input[i]->url);
-		pthread_create(p_tids[i], NULL, retrieve, input[i]);
-	}
-	bool flag = false;
-	while (finishedretrieval == 0){
-		flag = true;
-		for(int i=0; i<50; i++){
-			if (!(imgs[i]->filled)){
-				flag = false;
-			}
+	// Dummy File Name
+	char temp_file_name[DUMMYFILE_LEN];
+   	strcpy(temp_file_name, DUMMYFILE);
+   	temp_file_name[DUMMYFILE_IND] = (char)(p_in->pthread_id + '0');
+
+	//** cURL More Setup **//
+	/* specify URL to get */
+    curl_easy_setopt(curl_handle, CURLOPT_URL, url);
+    /* register write call back function to process received data */
+    curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, write_cb_curl3); 
+    /* user defined data structure passed to the call back function */
+    curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&recv_buf);
+    /* register header call back function to process received header data */
+    curl_easy_setopt(curl_handle, CURLOPT_HEADERFUNCTION, header_cb_curl); 
+    /* user defined data structure passed to the call back function */
+    curl_easy_setopt(curl_handle, CURLOPT_HEADERDATA, (void *)&recv_buf);
+    /* some servers requires a user-agent field */
+    curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
+
+
+	//** Keep Retrieving the Data **//
+	while(*(p_in->retrieved) < IMAGE_PARTS){
+		// *(p_in->retrieved) += 1;
+		// printf("Thread %d: current value is %d\n", p_in->pthread_id, *(p_in->retrieved));
+		// sleep(1);
+
+
+
+
+		res = curl_easy_perform(curl_handle);
+	    if( res != CURLE_OK) {
+	        printf("curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+	    } else {
+	         //Print how memory received
+			printf("%d:%lu bytes received in memory %p, seq=%d, filled=%d ", \
+	        		p_in->pthread_id, recv_buf.size, recv_buf.buf, recv_buf.seq, p_in->imagesRetrieved[recv_buf.seq]->filled);
+	    }
+
+	    if(p_in->imagesRetrieved[recv_buf.seq]->filled == 0){ //If not yet received
+			p_in->imagesRetrieved[recv_buf.seq]->filled = 1; //Set to received
+
+			write_file(temp_file_name, recv_buf.buf, recv_buf.size); //write data retrieved to intermediate file
+	    	get_png(temp_file_name, p_in->imagesRetrieved[recv_buf.seq]); //process data while server sleeps
+
+			*(p_in->retrieved) += 1; //Increase total received counter by 1
+			printf(" NOT RECEIVED YET-Currently %d parts are retrieved\n", *(p_in->retrieved));
+	    }else{ //If received
+			printf(" ALREADY RECEIVED-image section %d is full: %d\n", recv_buf.seq, p_in->imagesRetrieved[recv_buf.seq]->filled);
 		}
-		if (flag){
-			finishedretrieval = 1;
-		}
-	}
-	for (int i=0; i<threads-1; i++) {
-        pthread_join(*p_tids[i], (void **)&(res[i]));
-        retrieved += *res[i];
-    }
-	if(retrieved != 50){
-		printf("error in data retrieval, not all packets successfully retrieved");
-		return -1;
 	}
 
-	//cleanup
-	for (int i=0; i<threads-1; i++) {
-        free(res[i]);
-		free(p_tids[i]);
-    }
-    ///////////////////////////////////////////////////////////
-   	//copied from catbuf, used to concatenate array of pngs
+	printf("%d: done finding images\n", p_in->pthread_id);
 
+	//** Cleanup **//
+    curl_easy_cleanup(curl_handle);
+    curl_global_cleanup();
+    recv_buf_cleanup(&recv_buf);
+	remove(temp_file_name);
+	return NULL;
+}
+
+/**
+ * @brief: Retrieves data with many threads, making an image from the data
+ * @return_values:
+        0: Success
+        -1: Error: Must have at least 1 thread
+ */
+int multithread (int threads, int numpicture){
+	if(threads < 1) return -1;
+
+	//Array of thread ids
+	pthread_t *pthread_ids = malloc(sizeof(pthread_t) * threads);
+	// Thread data value to pass in;
+	thread_data_t thread_input_data[threads];
+
+	//num unique pieces obtained
+	unsigned int retr = 0;
+	//List of which images were retrieved
+	simple_PNG_p img[IMAGE_PARTS];
+
+	   	for (int i=0; i<IMAGE_PARTS; i++){
+		// Allocate memory for PNG struct
+		img[i] = (simple_PNG_p) malloc(sizeof(struct simple_PNG));
+   		img[i]->p_IHDR = NULL;
+   		img[i]->p_IDAT = NULL;
+   		img[i]->p_IEND = NULL;
+   		img[i]->filled = 0;
+   		img[i]->busy = 0;
+   	}
+	
+   	for(int i=0;i<threads;i++){
+		//num unique pieces obtained
+		thread_input_data[i].retrieved = &retr;
+		//List of which images were retrieved
+		thread_input_data[i].imagesRetrieved = (simple_PNG_p*) &img;
+		thread_input_data[i].pthread_id = i;
+		thread_input_data[i].photo_num = numpicture;
+		pthread_create(pthread_ids + i, NULL, get_data, (void *) &thread_input_data[i]);
+	}
+
+	printf("Main thread, finished calling everything\n");
+
+	for(int i=0;i<threads;i++){
+		pthread_join(pthread_ids[i], NULL);
+	}
+
+	printf("Main thread, all data retrieved\n");
+
+	//**Make PNG from Result**
    	U32 height = 0;
-   	data_IHDR_p calcs[50];
+   	data_IHDR_p calcs[IMAGE_PARTS];
 
-   	for (int i=0; i<50; i++){  //loop get IHDR data for dimensions
+   	for (int i=0; i<IMAGE_PARTS; i++){  //loop get IHDR data for dimensions
+	   	printf("On iteration %d\n", i);
 	   	calcs[i] = (data_IHDR_p)malloc(sizeof(struct data_IHDR));
-   		int get_data_IHDR_status = get_data_IHDR((char*) imgs[i]->p_IHDR->p_data, calcs[i]);
+   		int get_data_IHDR_status = get_data_IHDR((char*) img[i]->p_IHDR->p_data, calcs[i]);
 
 		if (get_data_IHDR_status != 0) {
 			printf("strip %d: failed to get IHDR data\n", i);
 			for(int j=0;j<=i;j++){
 				free(calcs[j]);
 			}
-			for(int j=0;j<50;j++){
-				free_png(imgs[j]);
+			for(int j=0;j<IMAGE_PARTS;j++){
+				free_png(img[j]);
 			}
 	    	return -1;
 		}
 
    		height += calcs[i]->height;
    	}
+
+	printf("LINE 413\n");
 	
    	U32 width = calcs[0]->width; // Assumes all be the same width
 
@@ -338,15 +431,15 @@ int multithread (int threads, int numpicture){
     U64 len_tot = 0;      //running tally of total length
     int ret = 0;        //debug param
 
-   	for (int i=0; i<50; i++){ //loop inflate data
-   		len_def = imgs[i]->p_IDAT->length;
+   	for (int i=0; i<IMAGE_PARTS; i++){ //loop inflate data
+   		len_def = img[i]->p_IDAT->length;
    		len_inf = 0;
-   		ret = mem_inf(catbuf+len_tot, &len_inf, imgs[i]->p_IDAT->p_data, len_def); //automatically concatenate inflated data to buffer
+   		ret = mem_inf(catbuf+len_tot, &len_inf, img[i]->p_IDAT->p_data, len_def); //automatically concatenate inflated data to buffer
 	    
 		if (ret !=0){
 	        printf("StdError: mem_def failed. ret = %d.\n", ret);
-			for(int j=0;j<50;j++){
-				free_png(imgs[j]);
+			for(int j=0;j<IMAGE_PARTS;j++){
+				free_png(img[j]);
 				free(calcs[j]);
 			}
 
@@ -356,6 +449,8 @@ int multithread (int threads, int numpicture){
 	    len_tot += len_inf;  //keep running total for buffer offset on next data inflate
     }
 
+	printf("LINE 443\n");
+
 	// **Deflate the Uncompressed Data**
 
     U8* newdata = malloc(height*((width*4)+1)); //new data buffer
@@ -364,15 +459,17 @@ int multithread (int threads, int numpicture){
     ret = mem_def(newdata, &len_def, catbuf, size, Z_DEFAULT_COMPRESSION);
     if (ret !=0){
         printf("StdError: mem_def failed. ret = %d.\n", ret);
-		for(int j=0;j<50;j++){
-			free_png(imgs[j]);
+		for(int j=0;j<IMAGE_PARTS;j++){
+			free_png(img[j]);
 			free(calcs[j]);
 		}
         return ret;
     }
     free(catbuf);
 
-	// **Creating new PNG Struct**
+	printf("LINE 461\n");
+
+		// **Creating new PNG Struct**
 
     simple_PNG_p newpng = (simple_PNG_p)malloc(sizeof(struct simple_PNG));
 
@@ -389,30 +486,34 @@ int multithread (int threads, int numpicture){
 
 	newpng->p_IDAT = (chunk_p)(malloc(sizeof(struct chunk)));
 	newpng->p_IDAT->length = (U32)len_def;
-	newpng->p_IDAT->type[0] = imgs[0]->p_IDAT->type[0];
-	newpng->p_IDAT->type[1] = imgs[0]->p_IDAT->type[1];
-	newpng->p_IDAT->type[2] = imgs[0]->p_IDAT->type[2];
-	newpng->p_IDAT->type[3] = imgs[0]->p_IDAT->type[3];
+	newpng->p_IDAT->type[0] = img[0]->p_IDAT->type[0];
+	newpng->p_IDAT->type[1] = img[0]->p_IDAT->type[1];
+	newpng->p_IDAT->type[2] = img[0]->p_IDAT->type[2];
+	newpng->p_IDAT->type[3] = img[0]->p_IDAT->type[3];
 	newpng->p_IDAT->p_data = newdata;
 	newpng->p_IDAT->crc = crccheck(newpng->p_IDAT);
 
-	newpng->p_IEND = imgs[0]->p_IEND; // Re-use same END data structure
+	newpng->p_IEND = img[0]->p_IEND; // Re-use same END data structure
 
    	write_png_file("all.png", newpng);
 
-	for (int i=0; i<50; i++){  //loop to free memory
-   		free_png(imgs[i]);
+	printf("LINE 491\n");
+
+	//End of File Cleanup
+	free(pthread_ids);
+	for(int i=0;i<IMAGE_PARTS;i++){
+		free_png(img[i]);
 		free(calcs[i]);
-   	}
+	}
 	free(newdata);
 	free(newpng->p_IDAT);
 	free(newpng->p_IHDR->p_data);
 	free(newpng->p_IHDR);
 	free(newpng);
 	free(new_header);
-   	return 0;
+	remove(DUMMYFILE);
+	return 0;
 }
-
 
 void* retrieve(void*data){
 	threadargs_p args = (struct threadargs*) data;
