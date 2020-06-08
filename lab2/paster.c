@@ -2,7 +2,7 @@
  * @brief: Connect to a webserver via curl to obtain 50 randomized strips of an image. Concatenate 
  *         all the PNG images into one PNG image. Both a single threaded and multithreaded option is available
  *         The resulting combined PNG should be called all.png.
- * EXAMPLE: ./catpng ./img1.png ./png/img2.png
+ * EXAMPLE: ./paster -n 2 -t 5
  */
 
 #include <stdio.h>
@@ -26,10 +26,10 @@
 #define BUF_SIZE 1048576  /* 1024*1024 = 1M */
 #define BUF_INC  524288   /* 1024*512  = 0.5M */
 #define DUMMYFILE "dummy0.png"
-#define DUMMYFILE_LEN 11
-#define DUMMYFILE_IND 5
-#define IMAGE_PARTS 50
-#define NUM_SERVERS 3
+#define DUMMYFILE_LEN 11 // Length of dummy0.png
+#define DUMMYFILE_IND 5 // Index of the number in dummy0.png
+#define IMAGE_PARTS 50 // Number of parts of the image sent from the serrver
+#define NUM_SERVERS 3 // Number of servers
 static unsigned int numthreads = 1; //default
 static unsigned int numpicture = 1; //default
 
@@ -311,13 +311,6 @@ void *get_data(void * arg){ //Subrountine to get the data
 
 	//** Keep Retrieving the Data **//
 	while(*(p_in->retrieved) < IMAGE_PARTS){
-		// *(p_in->retrieved) += 1;
-		// printf("Thread %d: current value is %d\n", p_in->pthread_id, *(p_in->retrieved));
-		// sleep(1);
-
-
-
-
 		res = curl_easy_perform(curl_handle);
 	    if( res != CURLE_OK) {
 	        printf("curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
@@ -372,7 +365,7 @@ int multithread (int threads, int numpicture){
 	//List of which images were retrieved
 	simple_PNG_p img[IMAGE_PARTS];
 
-	   	for (int i=0; i<IMAGE_PARTS; i++){
+	for (int i=0; i<IMAGE_PARTS; i++){
 		// Allocate memory for PNG struct
 		img[i] = (simple_PNG_p) malloc(sizeof(struct simple_PNG));
    		img[i]->p_IHDR = NULL;
@@ -390,16 +383,6 @@ int multithread (int threads, int numpicture){
 		thread_input_data[i].pthread_id = i;
 		thread_input_data[i].photo_num = numpicture;
 		pthread_create(pthread_ids + i, NULL, get_data, (void *) &thread_input_data[i]);
-	}
-
-	bool notdone = 1;
-	while (notdone){
-		notdone = 0;
-		for (int i=0; i<IMAGE_PARTS; i++){
-			if(img[i]->filled ==0 || img[i]->busy ==1){
-				notdone = 1;
-			}
-		}
 	}
 
 	for(int i=0;i<threads;i++){
