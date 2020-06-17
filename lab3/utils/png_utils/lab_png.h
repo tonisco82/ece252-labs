@@ -16,7 +16,7 @@
  * DEFINED MACROS 
  *****************************************************************************/
 
-#define PNG_SIG_SIZE    8 /* number of bytes of png image signature data */
+#define PNG_HDR_SIZE    8 /* number of bytes of png image signature data */
 #define CHUNK_LEN_SIZE  4 /* chunk length field size in bytes */          
 #define CHUNK_TYPE_SIZE 4 /* chunk type field size in bytes */
 #define CHUNK_CRC_SIZE  4 /* chunk CRC field size in bytes */
@@ -54,12 +54,12 @@ typedef struct data_IHDR {// IHDR chunk data
 
 /* A simple PNG file format, three chunks only*/
 typedef struct simple_PNG {
-    struct chunk *p_IHDR;
-    struct chunk *p_IDAT;  /* only handles one IDAT chunk */  
-    struct chunk *p_IEND;
-    int png_sig[PNG_SIG_SIZE];
+    chunk_p p_IHDR;
+    chunk_p p_IDAT;  /* only handles one IDAT chunk */  
+    chunk_p p_IEND;
+    U8 png_hdr[PNG_HDR_SIZE];
 } *simple_PNG_p;
 
 // What the 8-Byte Header of the PNG should look like in integer format
 // Used in multiple places
-const int png_header[PNG_SIG_SIZE] = {-119, 80, 78, 71, 13, 10, 26, 10};
+const U8 png_header[PNG_HDR_SIZE] = {0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
