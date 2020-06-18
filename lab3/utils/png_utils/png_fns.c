@@ -374,3 +374,119 @@ void free_simple_PNG(simple_PNG_p data){
     free(data);
 }
 
+/**
+ * @brief: Combines 2 PNGs into a single PNG.
+ * @params:
+ * out: a pointer to the resulting PNG after combining the two PNG files. Should already by allocated (only the simple_PNG is allocated not the chunks inside it)
+ * png1: a pointer to the first PNG (will be placed on top).
+ * png2: a pointer to the second PNG (will be placed on the bottom).
+ * @note: de-allocating the memory where png1 and png2 are stored is up to the user.
+ * @return:
+ * -1: Error
+ * 0: Success
+ */
+int combine_pngs(simple_PNG_p out, simple_PNG_p png1, simple_PNG_p png2){
+    /** Initial Setup **/
+        /** Find IHDR Data **/
+    int fill_IHDR_status = 0;
+    data_IHDR_p png1_IHDR = (data_IHDR_p) malloc(sizeof(struct data_IHDR));
+    data_IHDR_p png2_IHDR = (data_IHDR_p) malloc(sizeof(struct data_IHDR));
+
+    fill_IHDR_status = fill_IHDR_data(png1_IHDR, png1->p_IHDR);
+    if(fill_IHDR_status != 0){
+        free_data_IHDR(png1_IHDR);
+        free_data_IHDR(png2_IHDR);
+        return -1;
+    }
+
+    fill_IHDR_status = fill_IHDR_data(png2_IHDR, png2->p_IHDR);
+    if(fill_IHDR_status != 0){
+        free_data_IHDR(png1_IHDR);
+        free_data_IHDR(png2_IHDR);
+        return -1;
+    }
+
+        /** Ensure Same Width **/
+    if(png1_IHDR->width != png1_IHDR->width){
+        free_data_IHDR(png1_IHDR);
+        free_data_IHDR(png2_IHDR);
+        return -1;
+    }
+
+    /** Inflation Section **/
+    U32 combined_height = png1_IHDR->height + png2_IHDR->height;
+    U64 data_size = combined_height*((png1_IHDR->width*4)+1);
+    U8* catbuf = (U8 *) malloc(data_size);
+    U64 len_inf = 0;    /* uncompressed data length */
+    U64 len_tot = 0;    /* running tally of total length */
+    int ret = 0;        /* debug param */
+
+        /** Inflate First PNG **/
+    ret = mem_inf(catbuf+len_tot, &len_inf, png1->p_IDAT->p_data, png1->p_IDAT->length); //automatically concatenate inflated data to buffer
+    
+    if (ret !=0){
+        /** Error in inflating data **/
+        free_data_IHDR(png1_IHDR);
+        free_data_IHDR(png2_IHDR);
+        free(catbuf);
+        return -1;
+    }
+
+    len_tot += len_inf;  //keep running total for buffer offset on next data inflate
+    len_inf = 0;
+    ret = 0;
+
+        /** Inflate Second PNG **/
+    ret = mem_inf(catbuf+len_tot, &len_inf, png2->p_IDAT->p_data, png2->p_IDAT->length); //automatically concatenate inflated data to buffer
+    
+    if (ret !=0){
+        /** Error in inflating data **/
+        free_data_IHDR(png1_IHDR);
+        free_data_IHDR(png2_IHDR);
+        free(catbuf);
+        return -1;
+    }
+
+    ret = 0;
+    /** Deflation Section **/
+    U8* defbuf = (U8 *) malloc(data_size);
+
+    ret = mem_def(defbuf, &len_inf, catbuf, data_size, Z_DEFAULT_COMPRESSION);
+    if (ret !=0){
+        /** Error in deflating data **/
+        free_data_IHDR(png1_IHDR);
+        free_data_IHDR(png2_IHDR);
+        free(catbuf);
+        free(defbuf);
+        return -1;
+    }
+
+    /** Creating New PNG Struct **/
+        // Copy Header
+    memcpy((void *)out->png_hdr, (void *)png1->png_hdr, PNG_HDR_SIZE);
+
+        // Copy IHDR Chunk
+    out->p_IHDR = (chunk_p) malloc(sizeof(struct chunk));
+    png1_IHDR->height = combined_height;
+    int fill_IHDR_status = fill_IHDR_chunk(out->p_IHDR, png1_IHDR);
+
+        // Copy IDAT Chunk
+    out->p_IDAT = (chunk_p) malloc(sizeof(struct chunk));
+    memcpy((void *) out->p_IDAT, (void *) png1->p_IDAT, sizeof(struct chunk)); //Fine for initial setup. Update values after.
+    out->p_IDAT->length = (U32)len_inf;
+    out->p_IDAT->p_data = defbuf;
+
+        // Copy IEND Chunk
+    out->p_IEND = (chunk_p) malloc(sizeof(struct chunk));
+    memcpy((void *) out->p_IEND, (void *) png1->p_IEND, sizeof(struct chunk)); //Fine since there is no data
+
+
+    /** Cleanup **/
+    free_data_IHDR(png1_IHDR);
+    free_data_IHDR(png2_IHDR);
+    free(catbuf);
+        //Note: don't deallocate defbuf since it is used in the out png.
+
+    if(fill_IHDR_status != 0) return -1;
+    return 0;
+}
