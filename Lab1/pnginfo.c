@@ -11,7 +11,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include "helpers.c"
-#include "./png_util/crc.c"
+#include "./starter/png_util/crc.c"
 
 
 // Checks if the file is a png

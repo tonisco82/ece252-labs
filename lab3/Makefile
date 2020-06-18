@@ -2,14 +2,19 @@ CFLAGS?=-std=c99 -D_GNU_SOURCE -Wall -O2
 CC=gcc
 
 TEMP = temp
-PASTER = paster
+PASTER = paster2
 
 default: all
 
-all: $(PASTER)
+all: $(PASTER2)
 
-$(PASTER): $(PASTER).c
+
+$(PASTER2): $(PASTER2).c
 	$(CC) $(CFLAGS) -o $@ $< -lz
 
+$(TEMP): $(TEMP).c
+	$(CC) $(CFLAGS) -o $@ $< -lz 
+
+
 clean:
-	rm -f $(PASTER) *~
+	rm -f $(PASTER2) *~
