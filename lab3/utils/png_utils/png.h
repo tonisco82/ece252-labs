@@ -30,7 +30,7 @@ typedef unsigned int  U32;
 
 typedef struct chunk {
     U32 length;  /* length of data in the chunk, host byte order */
-    U8  type[4]; /* chunk type */
+    U8  type[CHUNK_TYPE_SIZE]; /* chunk type */
     U8  *p_data; /* pointer to location where the actual data are */
     U32 crc;     /* CRC field  */
 } *chunk_p;
