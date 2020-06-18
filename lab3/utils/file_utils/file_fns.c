@@ -12,11 +12,11 @@
 
 #pragma once
 
-
-// Returns the size of the file in number of bytes
-// -1 on error
-// file_path is the file path to the file
-// If the file is a symbolic link, it returns the length of the pathname to the link
+/**
+ * @return: the size of the file in number of bytes, -1 on error
+ * file_path is the file path to the file
+ * If the file is a symbolic link, it returns the length of the pathname to the link
+ */
 int get_file_size(char* file_path){
 
     // Stats Struct
@@ -27,18 +27,21 @@ int get_file_size(char* file_path){
     return -1;
 }
 
-// Returns the type of the file
-// file_path is the file path to the file
-// Return values:
-// -1: Error in reading file
-// 0: regular file
-// 1: Directory
-// 2: Block Special File
-// 3: Character Special File
-// 4: Pipe
-// 5: Symbolic Link
-// 6: Socket
-// 7: Unkown File Type
+
+/**
+ * Returns the type of the file
+ * file_path is the file path to the file
+ * @return:
+ * -1: Error in reading file
+ * 0: regular file
+ * 1: Directory
+ * 2: Block Special File
+ * 3: Character Special File
+ * 4: Pipe
+ * 5: Symbolic Link
+ * 6: Socket
+ * 7: Unkown File Type
+ */
 int get_file_type(char* file_path){
 
     // Stats Struct
@@ -74,12 +77,14 @@ int get_file_type(char* file_path){
     return -1;
 }
 
-// Takes a regular file path and writes the file to memory
-// Changes the result pointer to point to the memory
-// Changes the value of length to the length of the memory in bytes
-// Return value:
-// -1: Error in reading file, memory has been cleaned up
-// 0: success, *result is a pointer to memory that needs to be cleaned up
+/**
+ * Takes a regular file path and writes the file to memory
+ * Changes the result pointer to point to the memory
+ * Changes the value of length to the length of the memory in bytes
+ * @return:
+ * -1: Error in reading file, memory has been cleaned up
+ * 0: success, *result is a pointer to memory that needs to be cleaned up
+ */
 int write_file_to_mem(void** result, unsigned long* length, char *file_path){
     if(get_file_type(file_path) != 0) return -1; //Make sure regular file
 
@@ -105,10 +110,12 @@ int write_file_to_mem(void** result, unsigned long* length, char *file_path){
     return 0;
 }
 
-// Takes data from memory and writes it to a file
-// Return value:
-// -1: Error in writing to file
-// 0: success
+/**
+ * Takes data from memory and writes it to a file
+ * @return:
+ * -1: Error in writing to file
+ * 0: success
+ */
 int write_mem_to_file(void* result, unsigned long length, char *file_path){
     FILE *fp = fopen (file_path, "wb+");
 

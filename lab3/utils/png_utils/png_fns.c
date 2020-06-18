@@ -12,9 +12,13 @@
 
 #pragma once
 
-//Generates and returns a valid CRC for a given chunk
-//Returns the new crc
-unsigned long crc_generator(struct chunk* data){
+/**
+ * @brief: Generates and returns a valid CRC for a given chunk
+ * @params:
+ * data: pointer to a chunk struct. Must be filled with data.
+ * @return: the CRC code
+ */
+unsigned long crc_generator(chunk_p data){
 	// Length of the crc buffer
 	int len = data->length + CHUNK_TYPE_SIZE; // Length of the data plus the length of the type field
 
@@ -35,18 +39,21 @@ unsigned long crc_generator(struct chunk* data){
     return crc_code;
 }
 
-// Takes a point to the png data, and an offset inside the data.
-// Returns a chunk in the chunk data structure (out parameter)
-// Updates the offset.
-// out should already be allocated in memory
-// Return values:
-// -1: Error in reading data
-// 0: got chunk
+/**
+ * @brief: Fills a chunk with data from the data pointer. Updates the offset.
+ * @params:
+ * out: allocated memory for the chunk struct (p_data should not be allocated). Will be filled by the function.
+ * data: pointer to the beginning of the data to fill the chunk from.
+ * offset: pointer to the current offset within the data. This value will be updated as the chunk is filled.
+ * @note: de-allocating the memory where data and offset are stored is up to the user.
+ * @return:
+ * -1: Error in reading data
+ * 0: got chunk
+ */
 int fill_chunk(chunk_p out, void* data, unsigned long *offset){
     //Read Length Field
     memcpy((void *)(&(out->length)), (void *)(data + *offset), CHUNK_LEN_SIZE);
     *offset += CHUNK_LEN_SIZE;
-
     out->length = ntohl(out->length);
 
     //Read Type Field
@@ -54,37 +61,36 @@ int fill_chunk(chunk_p out, void* data, unsigned long *offset){
     *offset += CHUNK_TYPE_SIZE;
 
     //Read Data Field
+    out->p_data = malloc(out->length);
     memcpy((void *)(out->p_data), (void *)(data + *offset), out->length);
     *offset += out->length;
 
     //Read CRC Field
     memcpy((void *)(&(out->crc)), (void *)(data + *offset), CHUNK_CRC_SIZE);
     *offset += CHUNK_CRC_SIZE;
+    out->crc = ntohl(out->crc);
 
     return 0;
 }
 
-//Separate out chunks
-//target_png is a pointer to the png to fill (already allocated), none of the data itself should be allocated yet
-//data is a pointer to the png file data
-//length is the length of the png file data in bytes
-// Return values:
-// -1: Error in reading data
-// 0: got png
+/**
+ * @brief: Fills the target_png with the data from the data pointer.
+ * @params:
+ * target_png: pointer to a simple_png struct that is already allocated in memory (none of the chunks inside it are allocated). It will be filled with data.
+ * data: pointer to the memory containing all the data for a valid PNG file.
+ * @note: de-allocating the memory where data is stored is up to the user.
+ * @return:
+ * -1: Error in reading data
+ * 0: Success
+ */
 int fill_png_struct(simple_PNG_p target_png, void* data){
-
-    printf("line 76\n");
 
     unsigned long offset = 0; //Current offset in the data pointer
     int get_chunk_status = 0;
 
-    printf("line 79\n");
-
     // Copy the header
     memcpy((void *)target_png->png_hdr, data, PNG_HDR_SIZE * sizeof(U8));
     offset += PNG_HDR_SIZE * sizeof(U8);
-
-    printf("line 85 %ld\n", offset);
 
     /** Allocate memory for the chunks **/
     target_png->p_IHDR = malloc(sizeof(struct chunk));
@@ -95,27 +101,26 @@ int fill_png_struct(simple_PNG_p target_png, void* data){
     get_chunk_status = fill_chunk(target_png->p_IHDR, data, &offset);
     if(get_chunk_status != 0) return -1;
 
-    printf("line 96 %ld\n", offset);
-
     get_chunk_status = fill_chunk(target_png->p_IDAT, data, &offset);
     if(get_chunk_status != 0) return -1;
-
-    printf("line 101 %ld\n", offset);
 
     get_chunk_status = fill_chunk(target_png->p_IEND, data, &offset);
     if(get_chunk_status != 0) return -1;
 
-    printf("line 106 %ld\n", offset);
-
     return 0;
 }
 
-// Allocated and fills memory with data from a chunk struct
-// Does not de-allocate the chunk
-// Sets size to the size of the target data;
-// Return values:
-// -1: Error
-// 0: success
+/**
+ * @brief: Transfers data inside of a chunk to memory, in the format required for a png.
+ * @params:
+ * target: a pointer to a pointer. Target will be made to point to the where the data will be stored. This function will allocate the memory.
+ * size: pointer to a size variable. Size will be set to the number of bytes pointed to by *target.
+ * chunk: pointer to the chunk data struct where the data is to be taken from.
+ * @note: de-allocating the memory where chunk is stored is up to the user.
+ * @return:
+ * -1: Error
+ * 0: Success
+ */
 int chunk_to_data(void **target, unsigned long* size, chunk_p chunk){
     /** Determine size **/
     *size = CHUNK_LEN_SIZE + CHUNK_TYPE_SIZE + CHUNK_CRC_SIZE + chunk->length;
@@ -135,19 +140,24 @@ int chunk_to_data(void **target, unsigned long* size, chunk_p chunk){
     memcpy((void *)(*target + offset), chunk->p_data, chunk->length);
     offset += chunk->length;
 
-    memcpy((void *)(*target + offset), (void *)(&(chunk->crc)), sizeof(U32));
+    U32 chunk_crc = ntohl(chunk->crc);
+    memcpy((void *)(*target + offset), (void *)(&(chunk_crc)), sizeof(U32));
     offset += sizeof(U32);
 
     return 0;
 }
 
-//png struct to single pointer
-//Takes a simple_PNG data struct, and converts it into a png file in memory (in network order)
-//png_data will not be de-allocated.
-// Updates size to the size of the data pointer
-// Return values:
-// -1: Error in transferring data
-// 0: success in transfering data
+/**
+ * @brief: Transfers data inside a simple_png to memory, in the format required for a png.
+ * @params:
+ * data: pointer to a pointer. Data will point to a pointer to where the data is stored. The actual data will be allocated by this function.
+ * size: pointer to a size variable. Size will be set to the number of bytes of data pointed to by *data.
+ * png_data: pointer to the simple_png struct to take the data from.
+ * @note: de-allocating the memory where png_data is stored is up to the user.
+ * @return:
+ * -1: Error in transferring data
+ * 0: success in transfering data
+ */
 int fill_png_data(void** data, unsigned long* size, simple_PNG_p png_data){
 
     /** Move chunks to memory **/
@@ -193,11 +203,17 @@ int fill_png_data(void** data, unsigned long* size, simple_PNG_p png_data){
     return 0;
 }
 
-//Transforms a IHDR data struct into a data chunk struct
-//chunk_p must already by allocated in memory, but p_data must not be allocated.
-// Return values:
-// -1: Error
-// 0: Success
+
+/**
+ * @brief: Transforms a IHDR data struct into a data chunk struct
+ * @params:
+ * destination: a pointer to a chunk struct already allocated in memory (p_data is not allocated). Will be filled with data from the IHDR struct.
+ * data: pointer to the IHDR struct with the data to use in filling the destination.
+ * @note: de-allocating the memory where data is stored is up to the user.
+ * @return:
+ * -1: Error
+ * 0: Success
+ */
 int fill_IHDR_chunk(chunk_p destination, data_IHDR_p data){
 
     /** Determine Size **/
@@ -249,12 +265,18 @@ int fill_IHDR_chunk(chunk_p destination, data_IHDR_p data){
     return 0;
 }
 
-//IHDR Chunk to IHDR_data struct
-// Have out already allocated, this will just fill it
-// Return values:
-// -1: Error
-// 0: Success
+/**
+ * @brief: Fills an IHDR struct with data from and IHDR 
+ * @params:
+ * out: pointer to the IHDR struct to be filled by the data. Should already be allocated.
+ * data: pointer to the chunk struct with the data to be used to fill the IHDR struct.
+ * @note: de-allocating the memory where data is stored is up to the user.
+ * @return:
+ * -1: Error
+ * 0: Success
+ */
 int fill_IHDR_data(data_IHDR_p out, chunk_p data){
+    if(data->type[0] != (char) 'I' || data->type[1] != (char) 'H' || data->type[2] != (char) 'D' || data->type[3] != (char) 'R') return -1;
 
     unsigned int offset = 0;
 
@@ -285,10 +307,13 @@ int fill_IHDR_data(data_IHDR_p out, chunk_p data){
     return 0;
 }
 
-//Header Checker
-// Return values:
-// 0: invalid png header
-// 1: valid png header
+/**
+ * @brief: Checks the PNG header to ensure it is valid
+ * @param: pointer to a PNG struct containing valid information
+ * @return:
+ * 0: invalid PNG header
+ * 1: valid PNG header
+ */
 int png_header_checker(simple_PNG_p png_data){
     /** Check for mismatch in array **/
     for(int i = 0;i<PNG_HDR_SIZE;i++){
@@ -297,35 +322,51 @@ int png_header_checker(simple_PNG_p png_data){
     return 1;
 }
 
-//Is a png file checker
-// Return values:
-// 0: invalid png
-// 1: valid png
+/**
+ * @brief: Checks the PNG struct to ensure it is a valid PNG
+ * @param: pointer to a PNG struct containing valid information
+ * @return:
+ * 0: valid png
+ * 1: invalid header
+ * 2: invalid IHDR CRC
+ * 3: invalid IDAT CRC
+ * 4: invalid IEND CRC
+ * 5: invalid IHDR chunk length
+ * 6: invalid IEND chunk length
+ */
 int is_png_file(simple_PNG_p png_data){
     /** Check Header **/
-    if(png_header_checker(png_data) == 0) return 0;
+    if(png_header_checker(png_data) == 0) return 1;
     /** Check CRC codes **/
-    if(crc_generator(png_data->p_IHDR) != png_data->p_IHDR->crc) return 0;
-    if(crc_generator(png_data->p_IDAT) != png_data->p_IDAT->crc) return 0;
-    if(crc_generator(png_data->p_IEND) != png_data->p_IEND->crc) return 0;
-    return 1;
+    if(crc_generator(png_data->p_IHDR) != png_data->p_IHDR->crc) return 2;
+    if(crc_generator(png_data->p_IDAT) != png_data->p_IDAT->crc) return 3;
+    if(crc_generator(png_data->p_IEND) != png_data->p_IEND->crc) return 4;
+    if(png_data->p_IHDR->length != DATA_IHDR_SIZE) return 5;
+    if(png_data->p_IEND->length != 0) return 6;
+    return 0;
 }
 
-//De-allocates the memory of a data-IHDR struct
-// This includes deallocating the data_IHDR struct itself
+/**
+ * @brief: De-allocates the memory of a data-IHDR struct
+ * This includes deallocating the data_IHDR struct itself
+ */
 void free_data_IHDR(data_IHDR_p data){
     free(data);
 }
 
-//De-allocates the memory of a chunk struct
-// This includes deallocating the chunk struct itself
+/**
+ * @brief: De-allocates the memory of a chunk struct
+ * This includes deallocating the chunk struct itself
+ */
 void free_chunk(chunk_p data){
     free(data->p_data);
     free(data);
 }
 
-//De-allocates the memory of a simple_PNG struct
-// This includes deallocating the simple_PNG struct itself
+/**
+ * @brief: De-allocates the memory of a simple_PNG struct
+ * This includes deallocating the simple_PNG struct itself
+ */
 void free_simple_PNG(simple_PNG_p data){
     free_chunk(data->p_IHDR);
     free_chunk(data->p_IDAT);
