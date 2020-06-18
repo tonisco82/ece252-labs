@@ -5,10 +5,10 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
+#include <string.h> // For strings
 #include <errno.h>
 #include <dirent.h>
-#include <sys/stat.h>
+#include <sys/stat.h> // For stat function on a file
 
 #pragma once
 
@@ -23,7 +23,7 @@ int get_file_size(char* file_path){
     struct stat stats;
 
     // Check File type
-    if(stat(relative_path, &stats) == 0) return stats.st_size;
+    if(stat(file_path, &stats) == 0) return stats.st_size;
     return -1;
 }
 
@@ -45,7 +45,7 @@ int get_file_type(char* file_path){
     struct stat stats;
 
     // Check File type
-    if(stat(relative_path, &stats) == 0) {
+    if(stat(file_path, &stats) == 0) {
         if(S_ISDIR(stats.st_mode)) {
             //Is a directory
             return 1;
@@ -80,8 +80,8 @@ int get_file_type(char* file_path){
 // Return value:
 // -1: Error in reading file, memory has been cleaned up
 // 0: success, *result is a pointer to memory that needs to be cleaned up
-int write_file_to_mem(void** result, int* length, char *file_path){
-    if(get_file_type(file_path) !== 0) return -1; //Make sure regular file
+int write_file_to_mem(void** result, unsigned long* length, char *file_path){
+    if(get_file_type(file_path) != 0) return -1; //Make sure regular file
 
     int file_len = get_file_size(file_path); //Get file size
     if(file_len == -1) return -1;
@@ -91,7 +91,7 @@ int write_file_to_mem(void** result, int* length, char *file_path){
     if(!fp) return -1;
 
     *result = malloc(file_len); //Allocate data
-    *length = file_len;
+    *length = (unsigned long) file_len;
 
     int fread_status = fread(*result, file_len, 1, fp); //Read file
 
@@ -109,7 +109,7 @@ int write_file_to_mem(void** result, int* length, char *file_path){
 // Return value:
 // -1: Error in writing to file
 // 0: success
-int write_mem_to_file(void* result, int length, char *file_path){
+int write_mem_to_file(void* result, unsigned long length, char *file_path){
     FILE *fp = fopen (file_path, "wb+");
 
     if(!fp) return -1;

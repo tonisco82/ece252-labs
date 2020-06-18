@@ -5,9 +5,10 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include "png.h"
-#include "crc/crc.c"
+#include <string.h> // For strings
+#include <arpa/inet.h> // For ntohl and htonl
+#include "png.h" // For png structs and data
+#include "crc/crc.c" // For crc generator function
 
 #pragma once
 
@@ -64,20 +65,26 @@ int fill_chunk(chunk_p out, void* data, unsigned long *offset){
 }
 
 //Separate out chunks
-//target_png is a pointer to the png to fill, none of the data should be allocated yet
+//target_png is a pointer to the png to fill (already allocated), none of the data itself should be allocated yet
 //data is a pointer to the png file data
 //length is the length of the png file data in bytes
 // Return values:
 // -1: Error in reading data
 // 0: got png
-int fill_png(simple_PNG_p target_png, void* data){
+int fill_png_struct(simple_PNG_p target_png, void* data){
+
+    printf("line 76\n");
 
     unsigned long offset = 0; //Current offset in the data pointer
     int get_chunk_status = 0;
 
+    printf("line 79\n");
+
     // Copy the header
     memcpy((void *)target_png->png_hdr, data, PNG_HDR_SIZE * sizeof(U8));
     offset += PNG_HDR_SIZE * sizeof(U8);
+
+    printf("line 85 %ld\n", offset);
 
     /** Allocate memory for the chunks **/
     target_png->p_IHDR = malloc(sizeof(struct chunk));
@@ -85,14 +92,20 @@ int fill_png(simple_PNG_p target_png, void* data){
     target_png->p_IEND = malloc(sizeof(struct chunk));
 
     /** Fill the chunks with data **/
-    get_chunk_status = fill_chunk(target_png->p_IHDR, &offset);
-    if(get_chunk_status !== 0) return -1;
+    get_chunk_status = fill_chunk(target_png->p_IHDR, data, &offset);
+    if(get_chunk_status != 0) return -1;
 
-    get_chunk_status = fill_chunk(target_png->p_IDAT, &offset);
-    if(get_chunk_status !== 0) return -1;
+    printf("line 96 %ld\n", offset);
 
-    get_chunk_status = fill_chunk(target_png->p_IEND, &offset);
-    if(get_chunk_status !== 0) return -1;
+    get_chunk_status = fill_chunk(target_png->p_IDAT, data, &offset);
+    if(get_chunk_status != 0) return -1;
+
+    printf("line 101 %ld\n", offset);
+
+    get_chunk_status = fill_chunk(target_png->p_IEND, data, &offset);
+    if(get_chunk_status != 0) return -1;
+
+    printf("line 106 %ld\n", offset);
 
     return 0;
 }
@@ -135,7 +148,7 @@ int chunk_to_data(void **target, unsigned long* size, chunk_p chunk){
 // Return values:
 // -1: Error in transferring data
 // 0: success in transfering data
-int fill_png(void** data, unsigned long* size, simple_PNG_p png_data){
+int fill_png_data(void** data, unsigned long* size, simple_PNG_p png_data){
 
     /** Move chunks to memory **/
     unsigned long size_IHDR = 0;
@@ -279,7 +292,7 @@ int fill_IHDR_data(data_IHDR_p out, chunk_p data){
 int png_header_checker(simple_PNG_p png_data){
     /** Check for mismatch in array **/
     for(int i = 0;i<PNG_HDR_SIZE;i++){
-        if(png_header[i] !== png_data->png_hdr[i]) return 0;
+        if(png_header[i] != png_data->png_hdr[i]) return 0;
     }
     return 1;
 }
@@ -292,9 +305,9 @@ int is_png_file(simple_PNG_p png_data){
     /** Check Header **/
     if(png_header_checker(png_data) == 0) return 0;
     /** Check CRC codes **/
-    if(crc_generator(png_data->p_IHDR) !== png_data->p_IHDR->crc) return 0;
-    if(crc_generator(png_data->p_IDAT) !== png_data->p_IDAT->crc) return 0;
-    if(crc_generator(png_data->p_IEND) !== png_data->p_IEND->crc) return 0;
+    if(crc_generator(png_data->p_IHDR) != png_data->p_IHDR->crc) return 0;
+    if(crc_generator(png_data->p_IDAT) != png_data->p_IDAT->crc) return 0;
+    if(crc_generator(png_data->p_IEND) != png_data->p_IEND->crc) return 0;
     return 1;
 }
 
