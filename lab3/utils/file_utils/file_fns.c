@@ -18,7 +18,8 @@
  * If the file is a symbolic link, it returns the length of the pathname to the link
  */
 int get_file_size(char* file_path){
-
+    if(file_path == NULL) return -1;
+    
     // Stats Struct
     struct stat stats;
 
@@ -43,6 +44,7 @@ int get_file_size(char* file_path){
  * 7: Unkown File Type
  */
 int get_file_type(char* file_path){
+    if(file_path == NULL) return -1;
 
     // Stats Struct
     struct stat stats;
@@ -86,6 +88,8 @@ int get_file_type(char* file_path){
  * 0: success, *result is a pointer to memory that needs to be cleaned up
  */
 int write_file_to_mem(void** result, unsigned long* length, char *file_path){
+    if(file_path == NULL) return -1;
+
     if(get_file_type(file_path) != 0) return -1; //Make sure regular file
 
     int file_len = get_file_size(file_path); //Get file size
@@ -117,6 +121,8 @@ int write_file_to_mem(void** result, unsigned long* length, char *file_path){
  * 0: success
  */
 int write_mem_to_file(void* result, unsigned long length, char *file_path){
+    if(file_path == NULL) return -1;
+
     FILE *fp = fopen (file_path, "wb+");
 
     if(!fp) return -1;
