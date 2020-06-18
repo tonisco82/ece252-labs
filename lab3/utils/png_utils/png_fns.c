@@ -5,10 +5,13 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <errno.h>
+#include <dirent.h>
 #include <string.h> // For strings
 #include <arpa/inet.h> // For ntohl and htonl
 #include "png.h" // For png structs and data
 #include "crc/crc.c" // For crc generator function
+#include "zutil/zutil.c" //For data compression and decompression
 
 #pragma once
 
@@ -407,7 +410,7 @@ int combine_pngs(simple_PNG_p out, simple_PNG_p png1, simple_PNG_p png2){
     }
 
         /** Ensure Same Width **/
-    if(png1_IHDR->width != png1_IHDR->width){
+    if(png1_IHDR->width != png2_IHDR->width){
         free_data_IHDR(png1_IHDR);
         free_data_IHDR(png2_IHDR);
         return -1;
@@ -468,7 +471,7 @@ int combine_pngs(simple_PNG_p out, simple_PNG_p png1, simple_PNG_p png2){
         // Copy IHDR Chunk
     out->p_IHDR = (chunk_p) malloc(sizeof(struct chunk));
     png1_IHDR->height = combined_height;
-    int fill_IHDR_status = fill_IHDR_chunk(out->p_IHDR, png1_IHDR);
+    fill_IHDR_status = fill_IHDR_chunk(out->p_IHDR, png1_IHDR);
 
         // Copy IDAT Chunk
     out->p_IDAT = (chunk_p) malloc(sizeof(struct chunk));

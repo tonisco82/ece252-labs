@@ -6,38 +6,41 @@
 #include "utils/file_utils/file_fns.c"
 #include "utils/png_utils/png_fns.c"
 
-
+/**
+ * @brief: Shows examples of how to use the utility functions
+ */
 int main(int argc, char *argv[]){
     char *weef_img = "WEEF_1.png";
-    void *data;
-    unsigned long length = 0;
+    char *all_img = "hopefullythisworks.png";
 
-    simple_PNG_p png_data = malloc(sizeof(struct simple_PNG));
+    void *data1;
+    void *data2;
+    void *combinedData;
+    unsigned long length1;
+    unsigned long length2;
+    unsigned long combinedLength;
 
-    void *resultData;
-    unsigned long result_size;
+    simple_PNG_p png1 = (simple_PNG_p)(malloc(sizeof(struct simple_PNG)));
+    simple_PNG_p png2 = (simple_PNG_p)(malloc(sizeof(struct simple_PNG)));
+    simple_PNG_p combined = (simple_PNG_p)(malloc(sizeof(struct simple_PNG)));
 
-    printf("Result from write file to memory %d\n", write_file_to_mem(&data, &length, weef_img));
-    printf("The length of the data is %ld\n", length);
+    printf("1.write_file_to_mem %d\n", write_file_to_mem(&data1, &length1, weef_img));
+    printf("2.write_file_to_mem %d\n", write_file_to_mem(&data2, &length2, all_img));
 
-    printf("Result of filling the png %d\n", fill_png_struct(png_data, data));
-    printf("Is the result a png: %d\n", is_png_file(png_data));
+    printf("1.fill_png_struct %d\n", fill_png_struct(png1, data1));
+    printf("2.fill_png_struct %d\n", fill_png_struct(png2, data2));
 
-    printf("Result of filling the data from the png %d\n", fill_png_data(&resultData, &result_size, png_data));
-    printf("TYPES: %s %s %s\n", png_data->p_IHDR->type, png_data->p_IDAT->type, png_data->p_IEND->type);
+    printf("Combine PNGs %d\n", combine_pngs(combined, png1, png2));
 
-    data_IHDR_p header_data = malloc(sizeof(struct data_IHDR));
-    printf("Result of filling IHDR data %d\n", fill_IHDR_data(header_data, png_data->p_IHDR));
+    printf("Writing combined PNG to data %d\n", fill_png_data(&combinedData, &combinedLength, combined));
 
-    free_chunk(png_data->p_IHDR);
-    png_data->p_IHDR = malloc(sizeof(struct chunk));
-    printf("Result of putting IHDR data back into the chunk %d\n", fill_IHDR_chunk(png_data->p_IHDR, header_data));
+    printf("Writing data to a file %d\n", write_mem_to_file(combinedData, combinedLength, "hopefullythisworks2.png"));
 
-    printf("The length of the result data is %ld\n", result_size);
-    printf("Result from write file to memory %d\n", write_mem_to_file(resultData, result_size, "all.png"));
-    free(data);
-    free(resultData);
-    free_simple_PNG(png_data);
-
+    free(data1);
+    free(data2);
+    free(combinedData);
+    free_simple_PNG(png1);
+    free_simple_PNG(png2);
+    free_simple_PNG(combined);
     return 0;
 }

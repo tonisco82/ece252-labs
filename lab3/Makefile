@@ -8,7 +8,7 @@ default: all
 all: $(TEMP)
 
 $(TEMP): $(TEMP).c
-	$(CC) $(CFLAGS) -o $@ $<
+	$(CC) $(CFLAGS) -o $@ $< -lz
 
 clean:
 	rm -f $(TEMP) *~
