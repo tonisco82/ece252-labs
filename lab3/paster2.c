@@ -1,4 +1,3 @@
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -15,6 +14,7 @@
 #include "utils/util.c"
 #include "main_write_header_cb.c"
 
+#define BUF_SIZE 1048576  /* 1024*1024 = 1M */
 
 #define STRIP_WIDTH 400 //Pixel Width of incoming PNG
 #define STRIP_HEIGHT 6 //Pixel Height of incoming PNG
@@ -32,7 +32,6 @@
 #define URL3_LEN 11
 #define URL4 "&part="
 #define URL4_LEN 6
-#define BUF_SIZE 1048576  /* 1024*1024 = 1M */
 
 #define RESULT_PNG_NAME "all.png"
 
@@ -99,45 +98,60 @@ char *createTargetURL(int server_num, int image_num, int part_num){
 int producer (int shmid, int tracker, int shmid_sems, int picnum, int numserv);
 int consumer (int csleeptime);
 
-int main(int argc, char *argv[]) { //get args, call function
+int main(int argc, char *argv[]) {
+    /** Input Validation and Setup **/
+        // Check Inputs
     if(argc != 6){
         printf("Usage example: ./paster 2 1 3 10 1\n");
         return -1;
     }
+
+        //Input Variables
 	const int queuesize = atoi(argv[2]);
 	const int numproducers = atoi(argv[3]);
 	const int numconsumers = atoi(argv[4]);	
 	const int csleeptime = atoi(argv[5]);
 	const int picnum = atoi(argv[6]);
-	if (queuesize <1 || numproducers <1 || numconsumers<1 || csleeptime < 0 || picnum <1 || picnum > 3){
+
+	if (queuesize <1 || numproducers <1 || numconsumers<1 || csleeptime < 0 || picnum <1 || picnum > NUM_IMAGES){
 		printf("invalid arguments");
 		return -1;
 	}
+
+        //Process Variables
 	pid_t pid=0;
     pid_t cpids[numconsumers];
     pid_t ppids[numproducers];
-    struct timeval tv;
-        // Start Timer
+    int state;
+
+        // Start Timer and Variables
     struct timeval program_start, program_end;
     if (gettimeofday(&program_start, NULL) != 0) {
         perror("gettimeofday");
         abort();
     }
-    //setup shared memory
-    int shmid = shmget(IPC_PRIVATE, BUF_SIZE, IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR);
-    int tracker = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR);
-    int shmid_sems = shmget(IPC_PRIVATE, sizeof(sem_t) * NUM_SEMS, IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR);
+
+    /** Setup Shared Memory **/
+    int shmid = shmget(IPC_PRIVATE, BUF_SIZE, IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR); //Main Buffer
+    int tracker = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR); //Integer Tracker
+    int shmid_sems = shmget(IPC_PRIVATE, sizeof(sem_t) * NUM_SEMS, IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR); //Semaphore
     if (shmid == -1 || shmid_sems == -1 || tracker == -1) {
         perror("shmget");
         abort();
     }
-    //attach to and initialize shared memory
+
+        //attach to shared memory
     sem_t *sems;
     void *buf;
     void* count;
     buf = shmat(shmid, NULL, 0);
     sems = shmat(shmid_sems, NULL, 0);
     count = shmat(tracker, NULL, 0);
+    if ( buf == (void *) -1 || sems == (void *) -1 || count == (void *) -1) {
+        perror("shmat");
+        abort();
+    }
+        // Initialize Shared Memory
     memset(buf, 0, BUF_SIZE);
     memset(tracker, 0, sizeof(int));
     if ( sem_init(&sems[0], SEM_PROC, 1) != 0 ) {
@@ -149,22 +163,9 @@ int main(int argc, char *argv[]) { //get args, call function
         abort();
     }
 
-	//spawn producer children
-	for ( i = 0; i <numproducers; i++) {        
-        pid = fork();
-        if ( pid > 0 ) {        /* parent proc */
-            ppids[i] = pid;
-        } else if ( pid == 0 ) { /* child proc */
-        	int numserv = (i % 3)+1
-            producer(shmid, picnum, numserv);
-            break;
-        } else {
-            perror("fork");
-            abort();
-        }        
-    }
-    //spawn consumer children
-    for ( i = 0; i <numconsumers; i++) {       
+    /** Initializing Child Processes **/
+            //spawn consumer children. Note: spawn consumers first since they have a sleep time
+    for ( i = 0; i < numconsumers; i++) {       
         pid = fork();
         if ( pid > 0 ) {        /* parent proc */
             cpids[i] = pid;
@@ -176,29 +177,93 @@ int main(int argc, char *argv[]) { //get args, call function
             abort();
         }        
     }
-    //clean up children
-    if ( pid > 0 ) {            /* parent process */
-        for ( i = 0; i <numproducers; i++ ) {
+	    //spawn producer children
+    if ( pid > 0 ) {  
+        for ( i = 0; i < numproducers; i++) {        
+            pid = fork();
+            if ( pid > 0 ) {        /* parent proc */
+                ppids[i] = pid;
+            } else if ( pid == 0 ) { /* child proc */
+                producer(shmid, picnum, (i % NUM_SERVERS) + 1);
+                break;
+            } else {
+                perror("fork");
+                abort();
+            }        
+        }
+    }
+
+    /** ONLY Parent Process Does the Rest of This **/
+    if ( pid > 0 ) {
+        //wait for and clean up children
+        for ( i = 0; i < numproducers; i++ ) {
             waitpid(ppids[i], &state, 0);
             if (WIFEXITED(state)) {
                 printf("Child cpid[%d]=%d terminated with state: %d.\n", i, cpids[i], state);
             }             
         }
-        for ( i = 0; i <numconsumers; i++ ) {
+        for ( i = 0; i < numconsumers; i++ ) {
             waitpid(cpids[i], &state, 0);
             if (WIFEXITED(state)) {
                 printf("Child cpid[%d]=%d terminated with state: %d.\n", i, cpids[i], state);
             }             
         }
-    }
-    //////////////////////////////////////
-    //combine PNG files here! & write all.png
+    
+        /** Combine Data into 1 PNG struct **/
 
+            //Creation of Empty PNG
+        simple_PNG_p resulting_png;
+        if(create_empty_png(&resulting_png) != 0){
+            perror("create_empty_png");
+            abort();
+        }
 
-    //finish up, get timing
-    if ( pid > 0 ) {
+            //Setting IDAT Chunk
+        resulting_png->p_IDAT->p_data = (U8 *) buff;
+        resulting_png->p_IDAT->length = STRIP_HEIGHT*IMAGE_PARTS*((STRIP_WIDTH*4)+1);
+        resulting_png->p_IDAT->crc = crc_generator(resulting_png->p_IDAT);
+
+            //Setting IHDR Chunk
+
+                //Convert into data_IHDR struct
+        struct data_IHDR resulting_png_IHDR;
+        if(fill_IHDR_data(&resulting_png_IHDR, resulting_png->p_IHDR) != 0){
+            perror("fill_IHDR_data");
+            abort();
+        }
+                //Update Values
+        resulting_png_IHDR.length = STRIP_HEIGHT*IMAGE_PARTS;
+        resulting_png_IHDR.width = STRIP_WIDTH;
+
+                //Convert Back into Chunk
+        free(resulting_png->p_IHDR->p_data); //Only need to free the data pointer, the rest will be re-used
+        if(fill_IHDR_chunk(resulting_png->p_IHDR, &resulting_png_IHDR) != 0){
+            perror("fill_IHDR_chunk");
+            abort(); 
+        }
+
+        /** Write PNG struct to output file **/
+
+        unsigned long png_data_size = 0;
+        void *png_data;
+        if(fill_png_data(&png_data, &png_data_size, simple_PNG_p png_data) != 0){
+            perror("fill_png_data");
+            abort();
+        }
+        if(write_mem_to_file(png_data, png_data_size, RESULT_PNG_NAME) != 0){
+            perror("write_mem_to_file");
+            abort();
+        }
+
+        /** Get Program Timing **/
+
         gettimeofday(&program_end, NULL);
         printf("paster2 execution time: %.61f seconds\n", (double)((double)(program_end.tv_sec - program_start.tv_sec) + (((double)(program_end.tv_usec - program_start.tv_usec)) / 1000000.0)));
+
+        /** Cleanup **/
+        
+        free_simple_PNG(resulting_png);
+        free(png_data);
     }
     return 0;
 }
@@ -250,6 +315,4 @@ int producer (int shmid, int tracker, int shmid_sems, int picnum, int numserv){
     curl_easy_cleanup(curl_handle);
     curl_global_cleanup();
     shmdt(recv_buf);
-}
-
-
+};

@@ -493,3 +493,58 @@ int combine_pngs(simple_PNG_p out, simple_PNG_p png1, simple_PNG_p png2){
     if(fill_IHDR_status != 0) return -1;
     return 0;
 }
+
+/**
+ * @brief: Creates an empty PNG file
+ * @params:
+ * png: a pointer to a simple_PNG_p (which points to a simple_PNG). The simple_PNG_p will be made to point to the empty PNG.
+ * @note: The p_data in the IDAT chunk will not be allocated in memory or point to anything. Intialize it yourself and set the proper:
+ *          -height and width in the IHDR chunk
+ *          -length in the IDAT chunk
+ *          -crc in the IDAT chunk
+ * @return:
+ * -1: Error
+ * 0: Success
+ */
+int create_empty_png(simple_PNG_p *png){
+    int status = 0;
+
+    /** Allocated Data **/
+    *png = (simple_PNG_p) malloc(sizeof(struct simple_PNG));
+    *png->p_IHDR = (chunk_p) malloc(sizeof(struct chunk));
+    *png->p_IDAT = (chunk_p) malloc(sizeof(struct chunk));
+    *png->p_IEND = (chunk_p) malloc(sizeof(struct chunk));
+
+    /** Copy png_hdr **/
+    memcpy((void *) *png->png_hdr, (void *) png_header, PNG_HDR_SIZE * sizeof(U8));
+
+    /** Fill IHDR **/
+    struct data_IHDR png_ihdr_data;
+    png_ihdr_data.width = 0;
+    png_ihdr_data.height = 0;
+    png_ihdr_data.bit_depth = 8;
+    png_ihdr_data.color_type = 6;
+    png_ihdr_data.compression = 0;
+    png_ihdr_data.filter = 0;
+    png_ihdr_data.interlace = 0;
+    status = fill_IHDR_chunk(*png->p_IHDR, &png_ihdr_data);
+    if(status != 0) return -1;
+
+    /** Fill IDAT **/
+    *png->p_IDAT->length = 0;
+    *png->p_IDAT->type[0] = (char) 'I';
+    *png->p_IDAT->type[1] = (char) 'D';
+    *png->p_IDAT->type[2] = (char) 'A';
+    *png->p_IDAT->type[3] = (char) 'T';
+    *png->p_IDAT->crc = crc_generator(*png->p_IDAT);
+
+    /** Fill IEND **/
+    *png->p_IEND->length = 0;
+    *png->p_IEND->type[0] = (char) 'I';
+    *png->p_IEND->type[1] = (char) 'E';
+    *png->p_IEND->type[2] = (char) 'N';
+    *png->p_IEND->type[3] = (char) 'D';
+    *png->p_IEND->crc = crc_generator(*png->p_IEND);
+
+    return 0;
+}

@@ -1,8 +1,7 @@
 CFLAGS?=-std=c99 -D_GNU_SOURCE -Wall -O2
 CC=gcc
 
-TEMP = temp
-PASTER = paster2
+PASTER2 = paster2
 
 default: all
 
