@@ -132,7 +132,7 @@ char *createTargetURL(int server_num, int image_num, int part_num){
     return result;
 }
 
-int producer (int shmid, int tracker, int shmid_sems, int picnum, int numserv);
+int producer (int img_rec_buff, int num_images_received, int shmid_sems, int picnum, int numserv, int queuesize);
 int consumer (int csleeptime, int shmid_sems, int img_rec_buff, int processed_img_buff, int num_images_received);
 
 int main(int argc, char *argv[]) {
@@ -236,7 +236,7 @@ int main(int argc, char *argv[]) {
             if ( pid > 0 ) {        /* parent proc */
                 ppids[i] = pid;
             } else if ( pid == 0 ) { /* child proc */
-                producer(img_rec_buff, picnum, (i % NUM_SERVERS) + 1);
+                producer(img_rec_buff, num_images_received, shmid_sems, picnum, (i % NUM_SERVERS) + 1, queuesize);
                 break;
             } else {
                 perror("fork");
@@ -359,18 +359,22 @@ int main(int argc, char *argv[]) {
 }
 
 
-int producer (int shmid, int tracker, int shmid_sems, int picnum, int numserv){
-   	//curl stuff
+int producer (int img_rec_buff, int num_images_received, int shmid_sems, int picnum, int numserv, int queuesize){
+   	//initialization
    	int received = 0;
     CURL *curl_handle;
     CURLcode res;
     RECV_BUF recv_buf;
-    void* mem = shmat(shmid, NULL, 0);
-    int* numreceived = shmat(tracker, NULL, 0);
+    void* shbuf = shmat(img_rec_buff, NULL, 0);
+    int* numreceived = shmat(num_images_received, NULL, 0);
     sem_t* sems = shmat(shmid_sems, NULL, 0);
+    int num_in_buffer = 0;
+    short* bufinc;
+    unsigned short elementsize;
+    unsigned short elementnumber;
 
-    
-    recv_buf_init(&recv_buf, BUF_SIZE);
+    //init GET buffer and curl
+    recv_buf_init(&recv_buf, RECV_BUFF_ELEMENT_SZ);
     curl_global_init(CURL_GLOBAL_DEFAULT);
     curl_handle = curl_easy_init();
 
@@ -379,33 +383,72 @@ int producer (int shmid, int tracker, int shmid_sems, int picnum, int numserv){
         return 1;
     }
     while (received < IMAGE_PARTS){
-    	//check image counter
+
+		//critical section, check image counter
     	sem_wait(&sems[1]);
     	received = *numreceived;
-    	*numreceived++;
     	sem_post(&sems[1]);
 
-	    char* url = createTargetURL(numserv, picnum, received)
-	    /* specify URL to get */
-	    curl_easy_setopt(curl_handle, CURLOPT_URL, url);
-	    /* register write call back function to process received data */
-	    curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, write_cb_curl3); 
-	    /* user defined data structure passed to the call back function */
-	    curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&recv_buf);
-	    /* register header call back function to process received header data */
-	    curl_easy_setopt(curl_handle, CURLOPT_HEADERFUNCTION, header_cb_curl); 
-	    /* user defined data structure passed to the call back function */
-	    curl_easy_setopt(curl_handle, CURLOPT_HEADERDATA, (void *)&recv_buf);
-	    /* some servers requires a user-agent field */
-	    curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
-        res = curl_easy_perform(curl_handle);
-        if( res != CURLE_OK) {
-            fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
-        }
+    	if (received > IMAGE_PARTS){
+    		return 0;
+    	} else {
+    		//increment received so other threads know this chunk is taken
+    		sem_wait(&sems[1]);
+			received = *numreceived;
+			*numreceived++;
+			sem_post(&sems[1]);
+    		//download next image
+    		char* url = createTargetURL(numserv, picnum, received)
+		    /* specify URL to get */
+		    curl_easy_setopt(curl_handle, CURLOPT_URL, url);
+		    /* register write call back function to process received data */
+		    curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, write_cb_curl3); 
+		    /* user defined data structure passed to the call back function */
+		    curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&recv_buf);
+		    /* register header call back function to process received header data */
+		    curl_easy_setopt(curl_handle, CURLOPT_HEADERFUNCTION, header_cb_curl); 
+		    /* user defined data structure passed to the call back function */
+		    curl_easy_setopt(curl_handle, CURLOPT_HEADERDATA, (void *)&recv_buf);
+		    /* some servers requires a user-agent field */
+		    curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
+	        res = curl_easy_perform(curl_handle);
+	        if( res != CURLE_OK) {
+	            fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+	        }
+	        elementsize = recv_buf.size;
+	        elementnumber = recv_buf.seq;
+
+        	//Critical Section, checking if image buffer full, BUSY WAIT.
+        	do {
+		    	sem_wait(&sems[0]);
+		        num_in_buffer = *(short *)rec_buff;
+		        sem_post(&sems[0]);
+		    } while (num_in_buffer >= queuesize);
+
+	        //critical section, write element to shared buffer, increase number of elements in buffer
+	        sem_wait(&sems[0]);
+	       	bufinc = *(short *)rec_buff;
+	        *bufinc++;
+	        memcpy((void *)(shbuf + sizeof(short) + (num_in_buffer) * RECV_BUFF_ELEMENT_SZ ), &elementsize, sizeof(unsigned short));
+	        memcpy((void *)(shbuf + sizeof(short) + (num_in_buffer) * RECV_BUFF_ELEMENT_SZ + sizeof(unsigned short)), &elementnumber, sizeof(unsigned short));
+	        memcpy((void *)(shbuf + sizeof(short) + (num_in_buffer) * RECV_BUFF_ELEMENT_SZ + (2 * sizeof(unsigned short))), recv_buf.buf, RECV_BUFF_ELEMENT_SZ);
+            sem_post(&sems[0]);
+            //increment local counter;
+            received++;
+            if (received == 50){
+            	//final increment to signal finished
+           		sem_wait(&sems[1]);
+				*numreceived++;
+				sem_post(&sems[1]);
+
+            }
+    	}
     }
     curl_easy_cleanup(curl_handle);
     curl_global_cleanup();
-    shmdt(recv_buf);
+    free(recv_buf);
+    shmdt(shbuf);
+    return 0;
 };
 
 /**
@@ -426,6 +469,7 @@ int consumer (int csleeptime, int shmid_sems, int img_rec_buff, int processed_im
     simple_PNG_p part_png;
     int status = 0;
     U64 len_inf;
+    short* bufinc;
 
     sem_t *sems shmat(shmid_sems, NULL, 0);
     void *rec_buff = shmat(img_rec_buff, NULL, 0);
@@ -449,6 +493,8 @@ int consumer (int csleeptime, int shmid_sems, int img_rec_buff, int processed_im
         }else {
             /** @critical_section: Copying Most Recent Element Out of Buffer **/
             sem_wait(&sems[0]);
+           	bufinc = *(short *)rec_buff;
+	        *bufinc--;
             part_number = *(unsigned short *)(rec_buff + sizeof(short) + (num_in_buffer - 1) * RECV_BUFF_ELEMENT_SZ + sizeof(unsigned short));
             part_size = *(unsigned short *)(rec_buff + sizeof(short) + (num_in_buffer - 1) * RECV_BUFF_ELEMENT_SZ);
             part_data = malloc(part_size);
