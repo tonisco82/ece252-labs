@@ -323,7 +323,7 @@ void *get_data(void * arg){ //Subrountine to get the data
 			p_in->imagesRetrieved[recv_buf.seq]->filled = 0; //Set to received
 			p_in->imagesRetrieved[recv_buf.seq]->busy = 1;
 
-			if (write_file(temp_file_name, recv_buf.buf, recv_buf.size) ||get_png(temp_file_name, p_in->imagesRetrieved[recv_buf.seq])){ //write data retrieved to intermediate file
+			if (write_file(temp_file_name, recv_buf.buf, recv_buf.size) || get_png(temp_file_name, p_in->imagesRetrieved[recv_buf.seq])){ //write data retrieved to intermediate file
 				 //process data while server sleeps
 				p_in->imagesRetrieved[recv_buf.seq]->filled = 0;  //redundancy check, had issue with failing data read, if fail, then repull data from server (dont mark done)
 				p_in->imagesRetrieved[recv_buf.seq]->busy = 0;
