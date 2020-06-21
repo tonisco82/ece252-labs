@@ -8,21 +8,24 @@
 #include <string.h> // For strings
 #include <time.h>// For program run time
 #include <sys/time.h>
-#include <unistd.h> // Sleep
 #include "utils/file_utils/file_fns.c"
 #include "utils/png_utils/png_fns.c"
 #include "utils/util.c"
 #include "main_write_header_cb.c"
 
 #define BUF_SIZE 1048576  /* 1024*1024 = 1M */
+#define MAX_STRIP_SIZE 10000;
+#define NUM_SEMS 3 // Number of Semaphores in use by the system.
+// 0: Indication of downloaded image buffer being used, first element is the number of elements currently in the buffer
+// 1: Indication of number of images received being used
+// 2: Indication of resulting image data being used.
 
 #define STRIP_WIDTH 400 //Pixel Width of incoming PNG
 #define STRIP_HEIGHT 6 //Pixel Height of incoming PNG
 
-#define IMAGE_PARTS 50 // Number of parts of the image sent from the serrver
+#define IMAGE_PARTS 50 // Number of parts of the image sent from the server
 #define NUM_SERVERS 3 // Number of servers
 #define NUM_IMAGES 3 // Number of images
-#define NUM_SEMS 2
 #define SERVER_PORT 2530 // Port number on the machine
 #define URL1 "http://ece252-"
 #define URL1_LEN 14
@@ -37,6 +40,32 @@
 
 /**
  * @brief: Limited Buffer Produce/Consumer problem to downloading an image
+ * @steps: steps are shown below for both the producer and consumer
+ * @producers:
+1. Check  (wait for sems[1]) to see which image needs to be downloaded
+    a. If image needed to be downloaded > IMAGE_PARTS (50) then the exit.
+    b. Otherwise increase the number by 1
+    c. Post to sems[1]
+    d. Download the image part.
+2. Check to see if the buffer is full (wait for sems[0]). 
+    a. If full, keep checking until it isn't full.
+    b. Otherwise, increase it's amount by 1, and add element to the buffer.
+    c. Post to sems[0].
+
+ * @consumers:
+1. Wait for designated period of time
+2. Check to see if there is anything in the buffer (wait sem[0])
+    a. If Empty
+        i. Check to see if all images are downloaded (wait sems[1]). If it is, exit. Otherwise post sems[1];
+        ii. Repeat step 2
+    b. Otherwise
+        i. Copy an element from the buffer
+        ii. Decrease buffer amount by 1.
+    c. Post sems[0]
+    d. Uncompress/decompress/ whatever needs to be done.
+3. Check to see if the final image data is in use (wait sems[2]).
+    a. Add data to the final image data.
+    b. post sems[2].
  */
 
 /**
@@ -96,7 +125,7 @@ char *createTargetURL(int server_num, int image_num, int part_num){
 }
 
 int producer (int shmid, int tracker, int shmid_sems, int picnum, int numserv);
-int consumer (int csleeptime);
+int consumer (int csleeptime, int shmid_sems, int rec_buff_size, int img_rec_buff, processed_buff_size, processed_img_buff, num_images_received);
 
 int main(int argc, char *argv[]) {
     /** Input Validation and Setup **/
@@ -119,7 +148,7 @@ int main(int argc, char *argv[]) {
 	}
 
         //Process Variables
-	pid_t pid=0;
+	pid_t pid = 0;
     pid_t cpids[numconsumers];
     pid_t ppids[numproducers];
     int state;
@@ -128,43 +157,55 @@ int main(int argc, char *argv[]) {
     struct timeval program_start, program_end;
     if (gettimeofday(&program_start, NULL) != 0) {
         perror("gettimeofday");
-        abort();
+        return -1;
     }
 
     /** Setup Shared Memory **/
-    int shmid = shmget(IPC_PRIVATE, BUF_SIZE, IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR); //Main Buffer
-    int tracker = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR); //Integer Tracker
+    const int rec_buff_size = MAX_STRIP_SIZE * queuesize + sizeof(short);
+    int img_rec_buff = shmget(IPC_PRIVATE, rec_buff_size, IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR); //Main Buffer for Received Images (after producer, before consumer)
+
+    const int processed_buff_size = IMAGE_PARTS * STRIP_HEIGHT * ((STRIP_WIDTH * 4) + 1);
+    int processed_img_buff = shmget(IPC_PRIVATE, processed_buff_size, IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR); //Main Buffer for Processed Images (after consumer)
+
+    int num_images_received = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR); //Integer Tracker
+
     int shmid_sems = shmget(IPC_PRIVATE, sizeof(sem_t) * NUM_SEMS, IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR); //Semaphore
-    if (shmid == -1 || shmid_sems == -1 || tracker == -1) {
+
+    if (img_rec_buff == -1 || shmid_sems == -1 || num_images_received == -1 || processed_img_buff == -1) {
         perror("shmget");
-        abort();
+        return -1;
     }
 
         //attach to shared memory
     sem_t *sems;
-    void *buf;
-    void* count;
-    buf = shmat(shmid, NULL, 0);
+    void *rec_buff;
+    void *count;
+    void *proc_buff;
+
+    img_rec_buff = shmat(img_rec_buff, NULL, 0);
     sems = shmat(shmid_sems, NULL, 0);
-    count = shmat(tracker, NULL, 0);
-    if ( buf == (void *) -1 || sems == (void *) -1 || count == (void *) -1) {
+    count = shmat(num_images_received, NULL, 0);
+    proc_buff = shmat(processed_img_buff, NULL, 0);
+
+    if ( img_rec_buff == (void *) -1 || sems == (void *) -1 || count == (void *) -1) {
         perror("shmat");
-        abort();
+        return -1;
     }
         // Initialize Shared Memory
-    memset(buf, 0, BUF_SIZE);
-    memset(tracker, 0, sizeof(int));
+    memset(img_rec_buff, 0, rec_buff_size);
+    memset(num_images_received, 0, sizeof(int));
+    memset(processed_img_buff, 0, processed_buff_size);
     if ( sem_init(&sems[0], SEM_PROC, 1) != 0 ) {
         perror("sem_init(sem[0])");
-        abort();
+        return -1;
     }
     if ( sem_init(&sems[1], SEM_PROC, 1) != 0 ) {
         perror("sem_init(sem[1])");
-        abort();
+        return -1;
     }
 
     /** Initializing Child Processes **/
-            //spawn consumer children. Note: spawn consumers first since they have a sleep time
+        //spawn consumer children. Note: spawn consumers first since they have a sleep time
     for ( i = 0; i < numconsumers; i++) {       
         pid = fork();
         if ( pid > 0 ) {        /* parent proc */
@@ -184,7 +225,7 @@ int main(int argc, char *argv[]) {
             if ( pid > 0 ) {        /* parent proc */
                 ppids[i] = pid;
             } else if ( pid == 0 ) { /* child proc */
-                producer(shmid, picnum, (i % NUM_SERVERS) + 1);
+                producer(img_rec_buff, picnum, (i % NUM_SERVERS) + 1);
                 break;
             } else {
                 perror("fork");
@@ -193,7 +234,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    /** ONLY Parent Process Does the Rest of This **/
+    /** ONLY Parent Process does this part **/
     if ( pid > 0 ) {
         //wait for and clean up children
         for ( i = 0; i < numproducers; i++ ) {
@@ -219,7 +260,7 @@ int main(int argc, char *argv[]) {
         }
 
             //Setting IDAT Chunk
-        resulting_png->p_IDAT->p_data = (U8 *) buff;
+        resulting_png->p_IDAT->p_data = (U8 *) proc_buff;
         resulting_png->p_IDAT->length = STRIP_HEIGHT*IMAGE_PARTS*((STRIP_WIDTH*4)+1);
         resulting_png->p_IDAT->crc = crc_generator(resulting_png->p_IDAT);
 
@@ -265,6 +306,37 @@ int main(int argc, char *argv[]) {
         free_simple_PNG(resulting_png);
         free(png_data);
     }
+
+    /** Cleanup **/
+    if ( shmdt(img_rec_buff) != 0 ) {
+        perror("shmdt");
+        abort();
+    }
+
+    if ( shmdt(shmid_sems) != 0 ) {
+        perror("shmdt");
+        abort();
+    }
+
+    if ( shmdt(num_images_received) != 0 ) {
+        perror("shmdt");
+        abort();
+    }
+
+    if ( shmdt(processed_img_buff) != 0 ) {
+        perror("shmdt");
+        abort();
+    }
+
+        // Destroy Semaphore
+    if( pid > 0){
+        for(int i = 0; i < NUM_SEMS; i++){
+            if (sem_destroy(&sems[i])) {
+                perror("sem_destroy");
+                abort();
+            }
+        }
+    }
     return 0;
 }
 
@@ -288,12 +360,13 @@ int producer (int shmid, int tracker, int shmid_sems, int picnum, int numserv){
         fprintf(stderr, "curl_easy_init: returned NULL\n");
         return 1;
     }
-    while (received < 50){
+    while (received < IMAGE_PARTS){
     	//check image counter
     	sem_wait(&sems[1]);
     	received = *numreceived;
     	*numreceived++;
     	sem_post(&sems[1]);
+
 	    char* url = createTargetURL(numserv, picnum, received)
 	    /* specify URL to get */
 	    curl_easy_setopt(curl_handle, CURLOPT_URL, url);
@@ -316,3 +389,30 @@ int producer (int shmid, int tracker, int shmid_sems, int picnum, int numserv){
     curl_global_cleanup();
     shmdt(recv_buf);
 };
+
+/**
+ * @brief: Function to Run the Consumer Portion
+ * @params:
+ * cssleeptime: sleep time of each consumer between the processing of individual image segments.
+ * @return:
+ * -1: Error
+ * 0: Success
+ */
+int consumer (int csleeptime, int shmid_sems, int rec_buff_size, int img_rec_buff, processed_buff_size, processed_img_buff, num_images_received){
+    /** Setup **/
+    int num_recv = 0;
+    int num_in_buffer = 0;
+    sem_t *sems shmat(shmid_sems, NULL, 0);
+    void *rec_buff = shmat(img_rec_buff, NULL, 0);
+    void *num_imgs_recv = shmat(num_images_received, NULL, SHM_RDONLY);
+    void *proc_buff = shmat(processed_img_buff, NULL, 0);
+
+    while(num_recv < IMAGE_PARTS || num_in_buffer > 0){
+        /** Wait for designated period of time **/
+        usleep(csleeptime);
+
+        /** @critical_section: Check to see if there is anything in the buffer **/
+        sem_wait(&sems[0]);
+
+        sem_post(&sems[0]);
+}
