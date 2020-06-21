@@ -511,12 +511,12 @@ int create_empty_png(simple_PNG_p *png){
 
     /** Allocated Data **/
     *png = (simple_PNG_p) malloc(sizeof(struct simple_PNG));
-    *png->p_IHDR = (chunk_p) malloc(sizeof(struct chunk));
-    *png->p_IDAT = (chunk_p) malloc(sizeof(struct chunk));
-    *png->p_IEND = (chunk_p) malloc(sizeof(struct chunk));
+    (*png)->p_IHDR = (chunk_p) malloc(sizeof(struct chunk));
+    (*png)->p_IDAT = (chunk_p) malloc(sizeof(struct chunk));
+    (*png)->p_IEND = (chunk_p) malloc(sizeof(struct chunk));
 
     /** Copy png_hdr **/
-    memcpy((void *) *png->png_hdr, (void *) png_header, PNG_HDR_SIZE * sizeof(U8));
+    memcpy((void *) (*png)->png_hdr, (void *) png_header, PNG_HDR_SIZE * sizeof(U8));
 
     /** Fill IHDR **/
     struct data_IHDR png_ihdr_data;
@@ -527,24 +527,24 @@ int create_empty_png(simple_PNG_p *png){
     png_ihdr_data.compression = 0;
     png_ihdr_data.filter = 0;
     png_ihdr_data.interlace = 0;
-    status = fill_IHDR_chunk(*png->p_IHDR, &png_ihdr_data);
+    status = fill_IHDR_chunk((*png)->p_IHDR, &png_ihdr_data);
     if(status != 0) return -1;
 
     /** Fill IDAT **/
-    *png->p_IDAT->length = 0;
-    *png->p_IDAT->type[0] = (char) 'I';
-    *png->p_IDAT->type[1] = (char) 'D';
-    *png->p_IDAT->type[2] = (char) 'A';
-    *png->p_IDAT->type[3] = (char) 'T';
-    *png->p_IDAT->crc = crc_generator(*png->p_IDAT);
+    (*png)->p_IDAT->length = 0;
+    (*png)->p_IDAT->type[0] = (char) 'I';
+    (*png)->p_IDAT->type[1] = (char) 'D';
+    (*png)->p_IDAT->type[2] = (char) 'A';
+    (*png)->p_IDAT->type[3] = (char) 'T';
+    (*png)->p_IDAT->crc = crc_generator((*png)->p_IDAT);
 
     /** Fill IEND **/
-    *png->p_IEND->length = 0;
-    *png->p_IEND->type[0] = (char) 'I';
-    *png->p_IEND->type[1] = (char) 'E';
-    *png->p_IEND->type[2] = (char) 'N';
-    *png->p_IEND->type[3] = (char) 'D';
-    *png->p_IEND->crc = crc_generator(*png->p_IEND);
+    (*png)->p_IEND->length = 0;
+    (*png)->p_IEND->type[0] = (char) 'I';
+    (*png)->p_IEND->type[1] = (char) 'E';
+    (*png)->p_IEND->type[2] = (char) 'N';
+    (*png)->p_IEND->type[3] = (char) 'D';
+    (*png)->p_IEND->crc = crc_generator((*png)->p_IEND);
 
     return 0;
 }
