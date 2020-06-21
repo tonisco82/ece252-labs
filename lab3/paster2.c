@@ -19,7 +19,7 @@
 #define RECV_BUFF_ELEMENT_SZ (MAX_STRIP_SIZE + 2*sizeof(unsigned short))
 #define NUM_SEMS 3 // Number of Semaphores in use by the system.
 // 0: Indication of downloaded image buffer being used, first element is the number of elements currently in the buffer
-// 1: Indication of number of images received being used
+// 1: Indication of next image to download being used
 // 2: Indication of resulting image data being used.
 
 #define STRIP_WIDTH 400 //Pixel Width of incoming PNG
@@ -55,16 +55,13 @@
     a. If full, keep checking until it isn't full.
     b. Otherwise, increase it's amount by 1, and add element to the buffer.
     c. Post to sems[0].
-NOTE: When the last producer downlaods the last image, increase the buffer once again after 
-it has completely downlaoded the image and added it to the buffer. The consumer uses this to ensure
-that no more producers are mid-way through the action.
 NOTE: The recv buff acts like a stack. Append and remove from the end.
 
  * @consumers:
 1. Wait for designated period of time
 2. Check to see if there is anything in the buffer (wait sem[0])
     a. If Empty
-        i. Check to see if all images are downloaded (wait sems[1]). If it is, exit. Otherwise post sems[1];
+        i. Check to see if all images are downloaded and processed (wait sems[2]). If it is, exit. Otherwise post sems[2];
         ii. Repeat step 2
     b. Otherwise
         i. Copy an element from the buffer
@@ -133,7 +130,7 @@ char *createTargetURL(int server_num, int image_num, int part_num){
 }
 
 int producer (int img_rec_buff, int num_images_received, int shmid_sems, int picnum, int numserv, int queuesize);
-int consumer (int csleeptime, int shmid_sems, int img_rec_buff, int processed_img_buff, int num_images_received);
+int consumer (int csleeptime, int shmid_sems, int img_rec_buff, int processed_img_buff);
 
 int main(int argc, char *argv[]) {
     /** Input Validation and Setup **/
@@ -172,12 +169,15 @@ int main(int argc, char *argv[]) {
         // This is the receiving buffer. First is a short with the number of elements in the buffer, followed by an array of MAX_STRIP_SIZE elements, 
         // each with a integer (short) size followed by integer (short) part number followed by the data.
         // Acts like a stack. Take the num of elements in the buff (first sizeof(short) bytes) to determine number of elements in the buff. Add/remove from that element.
+        // short (2-bytes)-> number of elements currently in the buffer | queuesize groups of RECV_BUFF_ELEMENT_SZ bytes
     const int rec_buff_size = RECV_BUFF_ELEMENT_SZ * queuesize + sizeof(short);
     int img_rec_buff = shmget(IPC_PRIVATE, rec_buff_size, IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR); //Main Buffer for Received Images (after producer, before consumer)
 
-    const int processed_buff_size = IMAGE_PARTS * PROC_BUFF_ELEMENT_SZ;
+        // short (2-bytes)-> number of elements currently successfully processed | queuesize groups of RECV_BUFF_ELEMENT_SZ bytes (each one is an inflated image part).
+    const int processed_buff_size = IMAGE_PARTS * PROC_BUFF_ELEMENT_SZ  + sizeof(short);
     int processed_img_buff = shmget(IPC_PRIVATE, processed_buff_size, IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR); //Main Buffer for Processed Images (after consumer)
 
+        // Records the an indication for the next image to be received from the server.
     int num_images_received = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR); //Integer Tracker
 
     int shmid_sems = shmget(IPC_PRIVATE, sizeof(sem_t) * NUM_SEMS, IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR); //Semaphore
@@ -265,7 +265,7 @@ int main(int argc, char *argv[]) {
             // Deflate Data
         U8* defbuf = (U8 *) malloc(PROC_BUFF_ELEMENT_SZ * IMAGE_PARTS);
         U64 len_inf;
-        if(mem_def(defbuf, &len_inf, (U8 *)proc_buff, PROC_BUFF_ELEMENT_SZ * IMAGE_PARTS, Z_DEFAULT_COMPRESSION) != 0){
+        if(mem_def(defbuf, &len_inf, (U8 *)(proc_buff + sizeof(short)), PROC_BUFF_ELEMENT_SZ * IMAGE_PARTS, Z_DEFAULT_COMPRESSION) != 0){
             perror("mem_def");
             return -1;
         }
@@ -455,11 +455,14 @@ int producer (int img_rec_buff, int num_images_received, int shmid_sems, int pic
  * @brief: Function to Run the Consumer Portion
  * @params:
  * cssleeptime: sleep time of each consumer between the processing of individual image segments.
+ * shmid_sems: shared memory id for the semaphore
+ * img_rec_buff: shared memory id for the received image buffer
+ * processed_img_buff: shared memory id for the processed images buffer
  * @return:
  * -1: Error
  * 0: Success
  */
-int consumer (int csleeptime, int shmid_sems, int img_rec_buff, int processed_img_buff, int num_images_received){
+int consumer (int csleeptime, int shmid_sems, int img_rec_buff, int processed_img_buff){
     /** Setup **/
     int num_recv = 0;
     short num_in_buffer = 0;
@@ -473,10 +476,9 @@ int consumer (int csleeptime, int shmid_sems, int img_rec_buff, int processed_im
 
     sem_t *sems shmat(shmid_sems, NULL, 0);
     void *rec_buff = shmat(img_rec_buff, NULL, 0);
-    void *num_imgs_recv = shmat(num_images_received, NULL, SHM_RDONLY);
     void *proc_buff = shmat(processed_img_buff, NULL, 0);
 
-    while(num_recv < IMAGE_PARTS + 1 || num_in_buffer > 0){
+    while(num_recv < IMAGE_PARTS){
         /** Wait for designated period of time **/
         usleep(csleeptime);
 
@@ -487,9 +489,9 @@ int consumer (int csleeptime, int shmid_sems, int img_rec_buff, int processed_im
 
         if(num_in_buffer == 0){
             /** @critical_section: Check to see if all images are received **/
-            sem_wait(&sems[1]);
-            num_recv = *(int *)num_imgs_recv;
-            sem_post(&sems[1]);
+            sem_wait(&sems[2]);
+            num_recv = *(short *)proc_buff;
+            sem_post(&sems[2]);
         }else {
             /** @critical_section: Copying Most Recent Element Out of Buffer **/
             sem_wait(&sems[0]);
@@ -510,7 +512,7 @@ int consumer (int csleeptime, int shmid_sems, int img_rec_buff, int processed_im
 
             /** @critical_section: Inflating Data to the Processed Images Buffer **/
             sem_wait(&sems[2]);
-            status = mem_inf((proc_buff + ((part_number - 1) * PROC_BUFF_ELEMENT_SZ)), &len_inf, part_png->p_IDAT->p_data, part_png->p_IDAT->length);
+            status = mem_inf((proc_buff + sizeof(short) + ((part_number - 1) * PROC_BUFF_ELEMENT_SZ)), &len_inf, part_png->p_IDAT->p_data, part_png->p_IDAT->length);
             sem_post(&sems[2]);
 
             /** Clean-up **/
