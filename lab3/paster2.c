@@ -14,7 +14,7 @@
 #include "utils/file_utils/file_fns.c" // File input/output functions
 #include "utils/png_utils/png_fns.c" // PNG functions
 #include "utils/util.c" // Basic functions
-#include "utils/cURL/main_write_header_cb.c" // curl functions
+#include "utils/cURL/curl_fns.c" // curl functions
 
 #define BUF_SIZE 1048576  /* 1024*1024 = 1M */
 
@@ -22,7 +22,7 @@
 #define STRIP_HEIGHT 6 //Pixel Height of incoming PNG
 #define PROC_BUFF_ELEMENT_SZ (STRIP_HEIGHT * ((STRIP_WIDTH * 4) + 1)) //The size of data chunk of each PNG strip
 #define MAX_STRIP_SIZE 10000
-#define RECV_BUFF_ELEMENT_SZ (MAX_STRIP_SIZE + 2*sizeof(unsigned short)) //Size of each buffer element in the recv buffer
+#define RECV_BUFF_ELEMENT_SZ (MAX_STRIP_SIZE + 2*sizeof(unsigned long)) //Size of each buffer element in the recv buffer
 #define NUM_SEMS 3 // Number of Semaphores in use by the system.
 // 0: Indication of downloaded image buffer being used, first element is the number of elements currently in the buffer
 // 1: Indication of next image to download being used
@@ -83,7 +83,7 @@ NOTE: The recv buff acts like a stack. Append and remove from the end.
  * image_num: int between 1 and NUM_IMAGES
  * part_num: int between 1 and IMAGE_PARTS
  * @return:
- * heap allocated string pointer to the url. Is null terminated. User must de-allocate.
+ * heap allocated string pointer to the url. Is null terminated. User must de-allocated.
  */
 char *createTargetURL(int server_num, int image_num, int part_num){
     if(server_num > NUM_SERVERS || server_num < 1) server_num = 1;
@@ -139,7 +139,7 @@ int main(int argc, char *argv[]) {
     /** Input Validation and Setup **/
         // Check Inputs
     if(argc != 6){
-        printf("Usage example: ./paster 2 1 3 10 1\n");
+        printf("Usage example: ./paster2 2 1 3 10 1\n");
         return -1;
     }
 
@@ -150,8 +150,8 @@ int main(int argc, char *argv[]) {
 	const int csleeptime = atoi(argv[4]);
 	const int picnum = atoi(argv[5]);
 
-	if (queuesize <1 || numproducers <1 || numconsumers<1 || csleeptime < 0 || picnum <1 || picnum > NUM_IMAGES){
-		printf("invalid arguments");
+	if (queuesize <1 || numproducers <1 || csleeptime < 0 || picnum <1 || picnum > NUM_IMAGES){ //numconsumers<1 || 
+		printf("invalid arguments\n");
 		return -1;
 	}
 
@@ -170,7 +170,7 @@ int main(int argc, char *argv[]) {
 
     /** Setup Shared Memory **/
         // This is the receiving buffer. First is a short with the number of elements in the buffer, followed by an array of MAX_STRIP_SIZE elements, 
-        // each with a integer (short) size followed by integer (short) part number followed by the data.
+        // each with a integer (long) size followed by integer (long) part number followed by the data.
         // Acts like a stack. Take the num of elements in the buff (first sizeof(short) bytes) to determine number of elements in the buff. Add/remove from that element.
         // short (2-bytes)-> number of elements currently in the buffer | queuesize groups of RECV_BUFF_ELEMENT_SZ bytes
     const int rec_buff_size = RECV_BUFF_ELEMENT_SZ * queuesize + sizeof(short);
@@ -252,21 +252,16 @@ int main(int argc, char *argv[]) {
         for ( int i = 0; i < numproducers; i++ ){
             waitpid(ppids[i], &state, 0);
             if (WIFEXITED(state)) {
-                printf("Child cpid[%d]=%d terminated with state: %d.\n", i, cpids[i], state);
+                //printf("Child cpid[%d]=%d terminated with state: %d.\n", i, cpids[i], state);
             }             
         }
-
-        printf("All Producers Completed Operation\n");
 
         for ( int i = 0; i < numconsumers; i++ ){
             waitpid(cpids[i], &state, 0);
             if (WIFEXITED(state)) {
-                printf("Child cpid[%d]=%d terminated with state: %d.\n", i, cpids[i], state);
+                //printf("Child cpid[%d]=%d terminated with state: %d.\n", i, cpids[i], state);
             }             
         }
-
-        printf("All Consumers Completed Operation\n");
-        printf("Formatting PNG File\n");
     
         /** Combine Data into 1 PNG struct **/
             // Deflate Data
@@ -277,8 +272,6 @@ int main(int argc, char *argv[]) {
             return -1;
         }
 
-        printf("Deflated Data\n");
-
             // Creation of Empty PNG
         simple_PNG_p resulting_png;
         if(create_empty_png(&resulting_png) != 0){
@@ -286,16 +279,12 @@ int main(int argc, char *argv[]) {
             return -1;
         }
 
-        printf("Created Empty PNG\n");
-
             //Setting IDAT Chunk
         resulting_png->p_IDAT->p_data = defbuf;
         resulting_png->p_IDAT->length = PROC_BUFF_ELEMENT_SZ * IMAGE_PARTS;
         resulting_png->p_IDAT->crc = crc_generator(resulting_png->p_IDAT);
 
             //Setting IHDR Chunk
-
-        printf("Setting New Data\n");
 
                 //Convert into data_IHDR struct
         struct data_IHDR resulting_png_IHDR;
@@ -314,8 +303,6 @@ int main(int argc, char *argv[]) {
             return -1;
         }
 
-        printf("New Data Set, writing to file\n");
-
         /** Write PNG struct to output file **/
 
         unsigned long png_data_size = 0;
@@ -329,12 +316,10 @@ int main(int argc, char *argv[]) {
             return -1;
         }
 
-        printf("Wrote to File. ALL DONE\n");
-
         /** Get Program Timing **/
 
         gettimeofday(&program_end, NULL);
-        printf("paster2 execution time: %.61f seconds\n", (double)((double)(program_end.tv_sec - program_start.tv_sec) + (((double)(program_end.tv_usec - program_start.tv_usec)) / 1000000.0)));
+        printf("paster2 execution time: %.6lf seconds\n", (double)((double)(program_end.tv_sec - program_start.tv_sec) + (((double)(program_end.tv_usec - program_start.tv_usec)) / 1000000.0)));
 
         /** Cleanup **/
         
@@ -344,22 +329,22 @@ int main(int argc, char *argv[]) {
 
     /** Cleanup **/
     if ( shmdt(rec_buff) != 0 ) {
-        perror("shmdt");
+        perror("shmdt rec_buff");
         abort();
     }
 
     if ( shmdt(sems) != 0 ) {
-        perror("shmdt");
+        perror("shmdt sems");
         abort();
     }
 
     if ( shmdt(count) != 0 ) {
-        perror("shmdt");
+        perror("shmdt count");
         abort();
     }
 
     if ( shmdt(proc_buff) != 0 ) {
-        perror("shmdt");
+        perror("shmdt proc_buff");
         abort();
     }
 
@@ -393,32 +378,22 @@ int main(int argc, char *argv[]) {
  */
 int producer (int img_rec_buff, int num_images_received, int shmid_sems, int picnum, int numserv, int queuesize){
 
-    printf("Entering Producer Retrieving from Server %d\n", numserv);
-
    	/** Setup **/
         //Local Variables
    	int received = 0;
     CURL *curl_handle;
     CURLcode res;
-    RECV_BUF recv_buf;
+    RECV_BUF *recv_buf;
     int num_in_buffer = 0;
-    unsigned short elementsize;
     short filled_in_queue = 0;
+    unsigned long element_siz = 0;
+    unsigned long element_num = 0;
+    char* url;
 
         //Attaching The Shared Memory
     void* shbuf = shmat(img_rec_buff, NULL, 0);
     int* numreceived = shmat(num_images_received, NULL, 0);
     sem_t* sems = shmat(shmid_sems, NULL, 0);
-
-        //Initialize GET buffer and cURL
-    recv_buf_init(&recv_buf, RECV_BUFF_ELEMENT_SZ);
-    curl_global_init(CURL_GLOBAL_DEFAULT);
-    curl_handle = curl_easy_init();
-
-    if (curl_handle == NULL) {
-        fprintf(stderr, "curl_easy_init: returned NULL\n");
-        abort();
-    }
 
     /** Main Loop **/
     while (received < IMAGE_PARTS){
@@ -430,33 +405,45 @@ int producer (int img_rec_buff, int num_images_received, int shmid_sems, int pic
     	sem_post(&sems[1]);
 
     	if (received < IMAGE_PARTS){
+            /** cURL Setup **/
+            recv_buf = (RECV_BUF *) malloc(sizeof_shm_recv_buf(MAX_STRIP_SIZE));
+                    //Initialize GET buffer and cURL
+            shm_recv_buf_init(recv_buf, MAX_STRIP_SIZE);
+            curl_global_init(CURL_GLOBAL_DEFAULT);
+            curl_handle = curl_easy_init();
 
-            printf("Producer Retrieving Image %d from server %d\n", received, numserv);
-
+            if (curl_handle == NULL) {
+                perror("curl_easy_init");
+                abort();
+            }
+            
     		/** Download Image **/
-    		char* url = createTargetURL(numserv, picnum, received);
+                /* Create URL */
+    		url = createTargetURL(numserv, picnum, received);
 		        /* specify URL to get */
-		    curl_easy_setopt(curl_handle, CURLOPT_URL, url);
-		        /* register write call back function to process received data */
-		    curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, write_cb_curl3); 
-		        /* user defined data structure passed to the call back function */
-		    curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&recv_buf);
-		        /* register header call back function to process received header data */
-		    curl_easy_setopt(curl_handle, CURLOPT_HEADERFUNCTION, header_cb_curl); 
-		        /* user defined data structure passed to the call back function */
-		    curl_easy_setopt(curl_handle, CURLOPT_HEADERDATA, (void *)&recv_buf);
-		        /* some servers requires a user-agent field */
-		    curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
+            curl_easy_setopt(curl_handle, CURLOPT_URL, url);
+                /* register write call back function to process received data */
+            curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, write_cb_curl); 
+                /* user defined data structure passed to the call back function */
+            curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)recv_buf);
+                /* register header call back function to process received header data */
+            curl_easy_setopt(curl_handle, CURLOPT_HEADERFUNCTION, header_cb_curl); 
+                /* user defined data structure passed to the call back function */
+            curl_easy_setopt(curl_handle, CURLOPT_HEADERDATA, (void *)recv_buf);
+                /* some servers requires a user-agent field */
+            curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
+                /* request and download data */
 	        res = curl_easy_perform(curl_handle);
-	        if( res != CURLE_OK) {
-	            fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+
+	        if(res != CURLE_OK) {
+	            perror("curl_easy_perform()");
                 abort();
 	        }
-	        elementsize = recv_buf.size;
 
             /** @critical_section: Wait For Open Spot in Queue to Copy Memory in (Busy Waiting) **/
             filled_in_queue = 0;
-            printf("Producer Writting Image %d from server %d to Buffer\n", received, numserv);
+            element_num = (unsigned long) received;
+            element_siz = (unsigned long) (recv_buf->size > MAX_STRIP_SIZE ? MAX_STRIP_SIZE : recv_buf->size);
         	do {
 		    	sem_wait(&sems[0]);
 		        num_in_buffer = *(short *)shbuf;
@@ -464,19 +451,20 @@ int producer (int img_rec_buff, int num_images_received, int shmid_sems, int pic
                     filled_in_queue = 1; // Get out of loop
                     (*(short *)shbuf)++; // Increase buffer counter
                     //Copy over the Data
-                    memcpy((void *)(shbuf + sizeof(short) + (num_in_buffer) * RECV_BUFF_ELEMENT_SZ ), (void *) &elementsize, sizeof(unsigned short));
-	                memcpy((void *)(shbuf + sizeof(short) + (num_in_buffer) * RECV_BUFF_ELEMENT_SZ + sizeof(unsigned short)), (void *) &received, sizeof(unsigned short));
-	                memcpy((void *)(shbuf + sizeof(short) + (num_in_buffer) * RECV_BUFF_ELEMENT_SZ + (2 * sizeof(unsigned short))), (void *) recv_buf.buf, elementsize);
+                    memcpy((void *)(shbuf + sizeof(short) + (num_in_buffer) * RECV_BUFF_ELEMENT_SZ ), (void *) &element_siz, sizeof(unsigned long));
+	                memcpy((void *)(shbuf + sizeof(short) + (num_in_buffer) * RECV_BUFF_ELEMENT_SZ + sizeof(unsigned long)), (void *) &element_num, sizeof(unsigned long));
+	                memcpy((void *)(shbuf + sizeof(short) + (num_in_buffer) * RECV_BUFF_ELEMENT_SZ + (2 * sizeof(unsigned long))), (void *) recv_buf->buf, element_siz);
                 }
 		        sem_post(&sems[0]);
 		    } while (!filled_in_queue);
-            printf("Producer Wrote Image %d from server %d to Buffer\n", received, numserv);
+
+            /** Clean-Up **/
+            free(url);
+            curl_easy_cleanup(curl_handle);
+            curl_global_cleanup();
+            free(recv_buf);
     	}
     }
-    curl_easy_cleanup(curl_handle);
-    curl_global_cleanup();
-    recv_buf_cleanup(&recv_buf);
-    printf("Producer Compelete\n");
     return 0;
 };
 
@@ -493,13 +481,11 @@ int producer (int img_rec_buff, int num_images_received, int shmid_sems, int pic
  */
 int consumer (int csleeptime, int shmid_sems, int img_rec_buff, int processed_img_buff){
 
-    printf("Entering Consumer\n");
-
     /** Setup **/
     int num_recv = 0;
     short num_in_buffer = 0;
-    unsigned short part_number = 0;
-    unsigned short part_size = 0;
+    unsigned long part_number = 0;
+    unsigned long part_size = 0;
     void *part_data;
     simple_PNG_p part_png;
     U64 len_inf;
@@ -518,10 +504,10 @@ int consumer (int csleeptime, int shmid_sems, int img_rec_buff, int processed_im
         num_in_buffer = *(short *)rec_buff;
         if(num_in_buffer != 0){ //There was an element in the buffer, copying out of the buffer
             (*(short *)rec_buff)--; //Decrement number of elements in the buffer
-            part_size = *(unsigned short *)(rec_buff + sizeof(short) + (num_in_buffer - 1) * RECV_BUFF_ELEMENT_SZ);
+            part_size = *(unsigned long *)(rec_buff + sizeof(short) + (num_in_buffer - 1) * RECV_BUFF_ELEMENT_SZ);
             part_data = malloc(part_size);
-            part_number = *(unsigned short *)(rec_buff + sizeof(short) + (num_in_buffer - 1) * RECV_BUFF_ELEMENT_SZ + sizeof(unsigned short));
-            memcpy(part_data, (void *)(rec_buff + sizeof(short) + (num_in_buffer - 1) * RECV_BUFF_ELEMENT_SZ + (2 * sizeof(unsigned short))), part_size);
+            part_number = *(unsigned short *)(rec_buff + sizeof(short) + (num_in_buffer - 1) * RECV_BUFF_ELEMENT_SZ + sizeof(unsigned long));
+            memcpy(part_data, (void *)(rec_buff + sizeof(short) + ((num_in_buffer - 1) * RECV_BUFF_ELEMENT_SZ) + (2 * sizeof(unsigned long))), part_size);
         }
         sem_post(&sems[0]);
 
@@ -531,42 +517,46 @@ int consumer (int csleeptime, int shmid_sems, int img_rec_buff, int processed_im
             sem_wait(&sems[2]);
             num_recv = *(short *)proc_buff;
             sem_post(&sems[2]);
+
         }else {
 
-            printf("Consumer: %d elements in buffer, taking the last one (image part number %d).\n", num_in_buffer, part_number);
-
             /** Format Into PNG **/
-            part_png = (simple_PNG_p)malloc(sizeof(struct simple_PNG));
-            if(fill_png_struct(part_png, part_data) != 0){
-                perror("fill_png_struct with part");
-                abort();
+            part_png = (simple_PNG_p) malloc(sizeof(struct simple_PNG));
+            if(fill_png_struct(part_png, part_data, part_size) != 0){
+                /**
+                 * @alert: This section just prevents the code from failing. If an error occurs with the image, it replaces that section with an empty PDF instead of causing the entire process to fail.
+                 * Can be taken out, but should be left in for now to stop the process from terminating or hanging.
+                 */
+                perror("fill_png_struct");
+                //abort(); //Uncomment if you would rather have the process terminate
+
+                /** @critical_section: Pass an empty PNG part into the inflated data. **/
+                sem_wait(&sems[2]);
+                (*(short *)proc_buff)++;
+                num_recv = *(short *)proc_buff;
+                sem_post(&sems[2]);
+            }else{
+
+                if(mem_inf(catbuf, &len_inf, part_png->p_IDAT->p_data, part_png->p_IDAT->length) != 0){
+                    perror("mem_inf");
+                    abort();
+                }
+
+                /** @critical_section: Inflating Data to the Processed Images Buffer **/
+                sem_wait(&sems[2]);
+                (*(short *)proc_buff)++;
+                num_recv = *(short *)proc_buff;
+                memcpy((void *)(proc_buff + sizeof(short) + (part_number * PROC_BUFF_ELEMENT_SZ)), (void *)catbuf, len_inf);
+                sem_post(&sems[2]);
+
+                free_simple_PNG(part_png);
             }
-
-            printf("Consumer: inflating image part number %d into memory. Data length is %d\n", part_number, part_png->p_IDAT->length);
-
-            if(mem_inf(catbuf, &len_inf, part_png->p_IDAT->p_data, part_png->p_IDAT->length) != 0){
-                perror("mem_inf");
-                abort();
-            }
-
-            printf("Consumer: image part number %d inflated. Adding to memory. Inflated length is %ld\n", part_number, len_inf);
-
-            /** @critical_section: Inflating Data to the Processed Images Buffer **/
-            sem_wait(&sems[2]);
-            (*(short *)proc_buff)++;
-            num_recv = *(short *)proc_buff;
-            //memcpy((void *)(proc_buff + sizeof(short) + ((part_number - 1) * PROC_BUFF_ELEMENT_SZ)), (void *)catbuf, len_inf);
-            sem_post(&sems[2]);
-
-            printf("Consumer: image part number %d adding to memory. %d Images processed in total.\n", part_number, num_recv);
-            printf("\n");
 
             /** Clean-up **/
-            free_simple_PNG(part_png);
             free(part_data);
         }
     }
-    printf("Consumer done with operation, cleaning up\n");
+    
     free(catbuf);
     return 0;
 }

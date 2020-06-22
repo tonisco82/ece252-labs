@@ -14,13 +14,14 @@
  */
 
 /** 
- * @file main_wirte_read_cb.c
- * @brief cURL write call back to save received data in a user defined memory first
+ * @file main.c
+ * @brief cURL write call back to save received data in a shared memory first
  *        and then write the data to a file for verification purpose.
  *        cURL header call back extracts data sequence number from header.
  * @see https://curl.haxx.se/libcurl/c/getinmemory.html
  * @see https://curl.haxx.se/libcurl/using/
  * @see https://ec.haxx.se/callback-write.html
+ * NOTE: we assume each image segment from the server is less than 10K
  */ 
 
 
@@ -30,19 +31,45 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <curl/curl.h>
+#include <sys/shm.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <semaphore.h>
 
-#define IMG_URL "http://ece252-1.uwaterloo.ca:2520/image?img=1"
+#define IMG_URL "http://ece252-1.uwaterloo.ca:2530/image?img=1&part=20"
 #define DUM_URL "https://example.com/"
 #define ECE252_HEADER "X-Ece252-Fragment: "
-#define BUF_SIZE 1048576  /* 1024*1024 = 1M */
-#define BUF_INC  524288   /* 1024*512  = 0.5M */
+#define CURL_BUF_SIZE 10240 /* 1024*10 = 10K */
 
-#define max(a, b) \
-   ({ __typeof__ (a) _a = (a); \
-       __typeof__ (b) _b = (b); \
-     _a > _b ? _a : _b; })
+/* This is a flattened structure, buf points to 
+   the memory address immediately after 
+   the last member field (i.e. seq) in the structure.
+   Here is the memory layout. 
+   Note that the memory is a chunk of continuous bytes.
 
-typedef struct recv_buf2 {
+   On a 64-bit machine, the memory layout is as follows:
+
+   +================+
+   | buf            | 8 bytes
+   +----------------+
+   | size           | 8 bytes
+   +----------------+
+   | max_size       | 8 bytes
+   +----------------+
+   | seq            | 4 bytes
+   +----------------+
+   | padding        | 4 bytes
+   +----------------+
+   | buf[0]         | 1 byte
+   +----------------+
+   | buf[1]         | 1 byte
+   +----------------+
+   | ...            | 1 byte
+   +----------------+
+   | buf[max_size-1]| 1 byte
+   +================+
+*/
+typedef struct recv_buf_flat {
     char *buf;       /* memory to hold a copy of received data */
     size_t size;     /* size of valid data in buf in bytes*/
     size_t max_size; /* max capacity of buf in bytes*/
@@ -50,9 +77,8 @@ typedef struct recv_buf2 {
                      /* <0 indicates an invalid seq number */
 } RECV_BUF;
 
-
 size_t header_cb_curl(char *p_recv, size_t size, size_t nmemb, void *userdata);
-size_t write_cb_curl3(char *p_recv, size_t size, size_t nmemb, void *p_userdata);
+size_t write_cb_curl(char *p_recv, size_t size, size_t nmemb, void *p_userdata);
 int recv_buf_init(RECV_BUF *ptr, size_t max_size);
 int recv_buf_cleanup(RECV_BUF *ptr);
 int write_file(const char *path, const void *in, size_t len);
@@ -98,60 +124,52 @@ size_t header_cb_curl(char *p_recv, size_t size, size_t nmemb, void *userdata)
  *        curl_easy_perform().
  */
 
-size_t write_cb_curl3(char *p_recv, size_t size, size_t nmemb, void *p_userdata)
+size_t write_cb_curl(char *p_recv, size_t size, size_t nmemb, void *p_userdata)
 {
     size_t realsize = size * nmemb;
     RECV_BUF *p = (RECV_BUF *)p_userdata;
  
     if (p->size + realsize + 1 > p->max_size) {/* hope this rarely happens */ 
-        /* received data is not 0 terminated, add one byte for terminating 0 */
-        size_t new_size = p->max_size + max(BUF_INC, realsize + 1);   
-        char *q = realloc(p->buf, new_size);
-        if (q == NULL) {
-            perror("realloc"); /* out of memory */
-            return -1;
-        }
-        p->buf = q;
-        p->max_size = new_size;
+        fprintf(stderr, "User buffer is too small, abort...\n");
+        abort();
     }
 
-    memcpy(p->buf, p_recv, realsize); /*copy data from libcurl*/
+    memcpy(p->buf + p->size, p_recv, realsize); /*copy data from libcurl*/
     p->size += realsize;
     p->buf[p->size] = 0;
 
     return realsize;
 }
 
-
-int recv_buf_init(RECV_BUF *ptr, size_t max_size)
+/**
+ * @brief calculate the actual size of RECV_BUF
+ * @param size_t nbytes number of bytes that buf in RECV_BUF struct would hold
+ * @return the REDV_BUF member fileds size plus the RECV_BUF buf data size
+ */
+int sizeof_shm_recv_buf(size_t nbytes)
 {
-    void *p = NULL;
-    
-    if (ptr == NULL) {
-        return 1;
-    }
-
-    p = malloc(max_size);
-    if (p == NULL) {
-	return 2;
-    }
-    
-    ptr->buf = p;
-    ptr->size = 0;
-    ptr->max_size = max_size;
-    ptr->seq = -1;              /* valid seq should be non-negative */
-    return 0;
+    return (sizeof(RECV_BUF) + sizeof(char) * nbytes);
 }
 
-int recv_buf_cleanup(RECV_BUF *ptr)
+/**
+ * @brief initialize the RECV_BUF structure. 
+ * @param RECV_BUF *ptr memory allocated by user to hold RECV_BUF struct
+ * @param size_t nbytes the RECV_BUF buf data size in bytes
+ * NOTE: caller should call sizeof_shm_recv_buf first and then allocate memory.
+ *       caller is also responsible for releasing the memory.
+ */
+
+int shm_recv_buf_init(RECV_BUF *ptr, size_t nbytes)
 {
-    if (ptr == NULL) {
-	return 1;
+    if ( ptr == NULL ) {
+        return 1;
     }
     
-    free(ptr->buf);
+    ptr->buf = (char *)ptr + sizeof(RECV_BUF);
     ptr->size = 0;
-    ptr->max_size = 0;
+    ptr->max_size = nbytes;
+    ptr->seq = -1;              /* valid seq should be non-negative */
+    
     return 0;
 }
 
@@ -177,7 +195,7 @@ int write_file(const char *path, const void *in, size_t len)
         return -1;
     }
 
-    fp = fopen(path, "wb+");
+    fp = fopen(path, "wb");
     if (fp == NULL) {
         perror("fopen");
         return -2;
@@ -189,71 +207,3 @@ int write_file(const char *path, const void *in, size_t len)
     }
     return fclose(fp);
 }
-
-/*
-int main( int argc, char** argv ) 
-{
-    CURL *curl_handle;
-    CURLcode res;
-    char url[256];
-    RECV_BUF recv_buf;
-    char fname[256];
-    pid_t pid =getpid();
-    
-    recv_buf_init(&recv_buf, BUF_SIZE);
-    
-    if (argc == 1) {
-        strcpy(url, IMG_URL); 
-    } else {
-        strcpy(url, argv[1]);
-    }
-    printf("%s: URL is %s\n", argv[0], url);
-
-    curl_global_init(CURL_GLOBAL_DEFAULT);
-
-    init a curl session 
-    curl_handle = curl_easy_init();
-
-    if (curl_handle == NULL) {
-        fprintf(stderr, "curl_easy_init: returned NULL\n");
-        return 1;
-    }*/
-
-
-    /* specify URL to get 
-    curl_easy_setopt(curl_handle, CURLOPT_URL, url);*/
-
-    /* register write call back function to process received data 
-    curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, write_cb_curl3);*/ 
-    /* user defined data structure passed to the call back function 
-    curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&recv_buf);*/
-
-    /* register header call back function to process received header data 
-    curl_easy_setopt(curl_handle, CURLOPT_HEADERFUNCTION, header_cb_curl); */
-    /* user defined data structure passed to the call back function 
-    curl_easy_setopt(curl_handle, CURLOPT_HEADERDATA, (void *)&recv_buf);*/
-
-    /* some servers requires a user-agent field 
-    curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");*/
-
-    
-    /* get it! 
-    res = curl_easy_perform(curl_handle);
-
-    if( res != CURLE_OK) {
-        fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
-    } else {
-	printf("%lu bytes received in memory %p, seq=%d.\n", \
-               recv_buf.size, recv_buf.buf, recv_buf.seq);
-    }
-
-    sprintf(fname, "./output_%d_%d.png", recv_buf.seq, pid);
-    write_file(fname, recv_buf.buf, recv_buf.size);*/
-
-    /* cleaning up 
-    curl_easy_cleanup(curl_handle);
-    curl_global_cleanup();
-    recv_buf_cleanup(&recv_buf);
-    return 0;
-}
-*/

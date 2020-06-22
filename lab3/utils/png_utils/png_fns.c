@@ -53,22 +53,26 @@ unsigned long crc_generator(chunk_p data){
  * -1: Error in reading data
  * 0: got chunk
  */
-int fill_chunk(chunk_p out, void* data, unsigned long *offset){
+int fill_chunk(chunk_p out, void* data, unsigned long *offset, unsigned long data_len){
     //Read Length Field
+    if(data_len != 0 && data_len < *offset + CHUNK_LEN_SIZE) return -1;
     memcpy((void *)(&(out->length)), (void *)(data + *offset), CHUNK_LEN_SIZE);
     *offset += CHUNK_LEN_SIZE;
     out->length = ntohl(out->length);
 
     //Read Type Field
+    if(data_len != 0 && data_len < *offset + CHUNK_TYPE_SIZE) return -1;
     memcpy((void *)(out->type), (void *)(data + *offset), CHUNK_TYPE_SIZE);
     *offset += CHUNK_TYPE_SIZE;
 
     //Read Data Field
+    if(data_len != 0 && data_len < *offset + out->length) return -1;
     out->p_data = malloc(out->length);
     memcpy((void *)(out->p_data), (void *)(data + *offset), out->length);
     *offset += out->length;
 
     //Read CRC Field
+    if(data_len != 0 && data_len < *offset + CHUNK_CRC_SIZE) return -1;
     memcpy((void *)(&(out->crc)), (void *)(data + *offset), CHUNK_CRC_SIZE);
     *offset += CHUNK_CRC_SIZE;
     out->crc = ntohl(out->crc);
@@ -81,17 +85,19 @@ int fill_chunk(chunk_p out, void* data, unsigned long *offset){
  * @params:
  * target_png: pointer to a simple_png struct that is already allocated in memory (none of the chunks inside it are allocated). It will be filled with data.
  * data: pointer to the memory containing all the data for a valid PNG file.
+ * data_len: the length of the data to convert into a PNG. If too long, will not use some. If not long enough, -1 is returned. Enter 0 to ignore it.
  * @note: de-allocating the memory where data is stored is up to the user.
  * @return:
  * -1: Error in reading data
  * 0: Success
  */
-int fill_png_struct(simple_PNG_p target_png, void* data){
+int fill_png_struct(simple_PNG_p target_png, void* data, unsigned long data_len){
 
     unsigned long offset = 0; //Current offset in the data pointer
     int get_chunk_status = 0;
 
     // Copy the header
+    if(data_len != 0 && data_len < offset + PNG_HDR_SIZE * sizeof(U8)) return -1;
     memcpy((void *)target_png->png_hdr, data, PNG_HDR_SIZE * sizeof(U8));
     offset += PNG_HDR_SIZE * sizeof(U8);
 
@@ -101,13 +107,13 @@ int fill_png_struct(simple_PNG_p target_png, void* data){
     target_png->p_IEND = malloc(sizeof(struct chunk));
 
     /** Fill the chunks with data **/
-    get_chunk_status = fill_chunk(target_png->p_IHDR, data, &offset);
+    get_chunk_status = fill_chunk(target_png->p_IHDR, data, &offset, data_len);
     if(get_chunk_status != 0) return -1;
 
-    get_chunk_status = fill_chunk(target_png->p_IDAT, data, &offset);
+    get_chunk_status = fill_chunk(target_png->p_IDAT, data, &offset, data_len);
     if(get_chunk_status != 0) return -1;
 
-    get_chunk_status = fill_chunk(target_png->p_IEND, data, &offset);
+    get_chunk_status = fill_chunk(target_png->p_IEND, data, &offset, data_len);
     if(get_chunk_status != 0) return -1;
 
     return 0;
