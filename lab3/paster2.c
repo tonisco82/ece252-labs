@@ -497,7 +497,7 @@ int consumer (int csleeptime, int shmid_sems, int img_rec_buff, int processed_im
 
     while(num_recv < IMAGE_PARTS){
         /** Wait for designated period of time **/
-        usleep(csleeptime);
+        usleep(csleeptime*1000);
 
         /** @critical_section: Check to see if there is anything in the buffer **/
         sem_wait(&sems[0]);
