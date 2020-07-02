@@ -22,7 +22,7 @@
 #define SEED_URL "http://ece252-1.uwaterloo.ca/lab4/"
 #define ECE252_HEADER "X-Ece252-Fragment: "
 
-#define OUTPUT_FILE "png_urls.txt" //Maybe not needed
+#define OUTPUT_FILE "png_urls.txt"
 #define DEFAULT_THREAD_NUM 1
 #define DEFAULT_PNG_NUM 50
 #define DEFAULT_LOG_FILE ""
@@ -100,8 +100,9 @@ int main(int argc, char *argv[]) {
     }
 
         // Program Variables
-    Node_t *png_urls = NULL; // The resulting png urls
-    Node_t *to_visit = NULL; // A list of the next URLs to Visit. After pop need to ensure the URL has not been checked before (but also check before putting in to save memory)
+    Node_t *png_urls = NULL; // The resulting png urls (of valid PNGs)
+    Node_t *to_visit = NULL; // A list (stack) of the next URLs to Visit. After pop need to ensure the URL has not been checked before (but also check before putting in to save memory)
+    Node_t *log = NULL; // A log of every URL visited in order
     struct hsearch_data *visited_urls = calloc(1, sizeof(struct hsearch_data));
     if(hcreate_r(MAX_HTABLE_SZ, visited_urls) == 0){
         printf("Error: insufficient space to create hashtable\n");
@@ -120,7 +121,10 @@ int main(int argc, char *argv[]) {
     /** @output_section: Output Timing Result **/
 
         // Output to logfile if applicable
-    if(strcmp(logfile, DEFAULT_LOG_FILE) != 0) linkedlist_to_file(png_urls, logfile);
+    if(strcmp(logfile, DEFAULT_LOG_FILE) != 0) linkedlist_to_file(log, logfile);
+
+        // Output valid PNG urls to file
+    linkedlist_to_file(png_urls, OUTPUT_FILE);
 
         // Print Timing
     gettimeofday(&program_end, NULL);
@@ -134,6 +138,7 @@ int main(int argc, char *argv[]) {
     free(seed_url);
     freeMemory(png_urls);
     freeMemory(to_visit);
+    freeMemory(log);
 
     return 0;
 }
