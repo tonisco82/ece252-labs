@@ -442,7 +442,7 @@ int main( int argc, char** argv )
     } else {
         strcpy(url, argv[1]);
     }
-    printf("%s: URL is %s\n", argv[0], url);
+    printf("%s: URL is %s\n", argv[1], url);
 
     curl_global_init(CURL_GLOBAL_DEFAULT);
     curl_handle = easy_handle_init(&recv_buf, url);
