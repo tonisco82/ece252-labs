@@ -11,6 +11,9 @@
 #include <curl/curl.h>
 #include <search.h>
 #include <time.h> // For program run time
+#include <pthread.h>
+#include <semaphore.h>
+#include <openssl/sha.h>
 // #include <libxml/HTMLparser.h>
 // #include <libxml/parser.h>
 // #include <libxml/xpath.h>
@@ -57,7 +60,7 @@ typedef struct web_crawler_input {
     Node_t **to_visit; // A list (stack) of the next URLs to Visit.
     Node_t **log; // A log of every URL visited in order
     struct hsearch_data *visited_urls; // Hash Table for all URLs
-    int *numpictures; // Total Number of Pictures Left to Acquire
+    int *numpicture; // Total Number of Pictures Left to Acquire
 } web_crawler_input_t;
 
 /**
@@ -130,18 +133,18 @@ int main(int argc, char *argv[]) {
         printf("Error: insufficient space to create hashtable\n");
         free(logfile);
         free(seed_url);
-        free(hsearch_data);
+        free(visited_urls);
         return -1;
     }
-
-    pthread_t pthread_ids[numthreads];
 
     web_crawler_input_t crawler_params;
     crawler_params.png_urls = &png_urls;
     crawler_params.to_visit = &to_visit;
     crawler_params.log = &log;
-    crawler_params.visited_urls = &visited_urls;
-    crawler_params.numpictures = &numpictures;
+    crawler_params.visited_urls = visited_urls;
+    crawler_params.numpicture = &numpicture;
+
+    pthread_t pthread_ids[numthreads];
 
     /** @main_section: Start Main Part of the Program **/
 
@@ -182,12 +185,39 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
+
 /**
- * Function To Crawl the Web and Find N PNG files. Is thread safe.
+ * @brief: Function To Crawl the Web and Find N PNG files. Is thread safe.
+ * @steps:
+ * 1. Check to see if there are URLs in the to_visit stack
+ *      a. If there is one, take it
+ *      b. If not, check to see if any URLs are being processed.
+ *          i. If there are, wait for it to finish.
+ *          ii. If not, exit the program
+ * 2. Check to see if the URL has been processed. (check HashTable)
+ *      a. If it has, discard it. Go to step 1.
+ *      b. If it hasn't, add to hashtable as searching. Perform cURL request.
+ * 3. Once cURL is finished:
+ *      a. Update value in hashtable
+ *      b. If PNG, add to png_urls if numpngs still positive.
+ *      c. Add the list of linked URLs to the to_visit
  */
 void *web_crawler(void *arg){
     /** @initial_setup: decode input and set up variables **/
-	web_crawler_input_t *input_data = arg;
+	// web_crawler_input_t *input_data = arg;
+
+    // int findMorePNGs = 1; // Become 0 if numpngs is 
+
+    // while(findMorePNGs){
+
+    // }
+
+    printf("Testing123\n");
 
     return NULL;
 }
+
+//Done when:
+// 1. There are no more items in the to_visit list && there are no more URLs being processed
+// or 
+// 2. The max number of PNGs has been found

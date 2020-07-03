@@ -94,22 +94,28 @@ void printString(char *data)
     printf("%s\n", data);
 }
 
-void linkedlist_to_file(Node_t *head_node, char *file_path){
+// Print a linked list to a file.
+// Each entry is a line
+int linkedlist_to_file(Node_t *head_node, char *file_path){
     if(file_path == NULL) return -1;
 
     FILE *fp = fopen (file_path, "wb+");
 
     if(!fp) return -1;
 
+    char new_line = '\n';
+
     // Iterate over list
     while (head_node != NULL)
     {
         fwrite(head_node->data, strlen(head_node->data), 1, fp); //Write Data
-        fwrite('\n', sizeof(char), 1, fp); //Write newline character
+        fwrite(&new_line, sizeof(char), 1, fp); //Write newline character
 
         // Move to next node
         head_node = head_node->next;
     }
 
     fclose(fp);
+
+    return 0;
 }
