@@ -3,7 +3,6 @@
  * @authors Braden Bakker and Devon Miller-Junk
  */ 
 
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,20 +16,25 @@
 // #include <libxml/xpath.h>
 // #include <libxml/uri.h>
 
+//Included Utility Code
 #include "./utils/linkedList.c"
 
 #define SEED_URL "http://ece252-1.uwaterloo.ca/lab4/"
 #define ECE252_HEADER "X-Ece252-Fragment: "
 
+// Default Values for Inputs and File Names
 #define OUTPUT_FILE "png_urls.txt"
 #define DEFAULT_THREAD_NUM 1
 #define DEFAULT_PNG_NUM 50
 #define DEFAULT_LOG_FILE ""
 
-#define DEFAULT_STRING_SZ 200
+#define DEFAULT_STRING_SZ 200 // Size of the Default String
 
-#define MAX_HTABLE_SZ 500
+#define MAX_HTABLE_SZ 500 // Size of the HashTable
 
+/**
+ * Data Type For entries into the Hash Table
+ */
 typedef struct Hash_URL_Entry {
     char *url;
     char state;
@@ -43,9 +47,27 @@ typedef struct Hash_URL_Entry {
     * 2: valid URLs to crawl (link to more URLs)
     * 3: invalid URL
     */
-}
+} hash_url_entry_t;
 
+/**
+ * Data Type For Input Parameters into the Thread Function
+ */
+typedef struct web_crawler_input {
+    Node_t **png_urls; // The urls of valid PNGs.
+    Node_t **to_visit; // A list (stack) of the next URLs to Visit.
+    Node_t **log; // A log of every URL visited in order
+    struct hsearch_data *visited_urls; // Hash Table for all URLs
+    int *numpictures; // Total Number of Pictures Left to Acquire
+} web_crawler_input_t;
 
+/**
+ * Function To Crawl the Web and Find N PNG files. Is thread safe.
+ */
+void *web_crawler(void *arg);
+
+/**
+ * Main Function to create and run the functions
+ */
 int main(int argc, char *argv[]) {
     //TODO: need to rework input decoding to work when the seed url isn't the last input.
 
@@ -112,11 +134,28 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
+    pthread_t pthread_ids[numthreads];
+
+    web_crawler_input_t crawler_params;
+    crawler_params.png_urls = &png_urls;
+    crawler_params.to_visit = &to_visit;
+    crawler_params.log = &log;
+    crawler_params.visited_urls = &visited_urls;
+    crawler_params.numpictures = &numpictures;
+
     /** @main_section: Start Main Part of the Program **/
 
+        // Push Initial Seed URL
+    push(&to_visit, seed_url);
 
-
-
+        // Create Threads
+    for(int i=0; i<numthreads; i++){
+        pthread_create(pthread_ids + i, NULL, web_crawler, (void *)(&crawler_params));
+    }
+        // Join Threads
+    for(int i=0; i<numthreads; i++){
+        pthread_join(pthread_ids[i], NULL);
+    }
 
     /** @output_section: Output Timing Result **/
 
@@ -135,10 +174,20 @@ int main(int argc, char *argv[]) {
     hdestroy_r(visited_urls);
     free(visited_urls);
     free(logfile);
-    free(seed_url);
+    //free(seed_url); // Should be freed when removed from the list.
     freeMemory(png_urls);
     freeMemory(to_visit);
     freeMemory(log);
 
     return 0;
+}
+
+/**
+ * Function To Crawl the Web and Find N PNG files. Is thread safe.
+ */
+void *web_crawler(void *arg){
+    /** @initial_setup: decode input and set up variables **/
+	web_crawler_input_t *input_data = arg;
+
+    return NULL;
 }
