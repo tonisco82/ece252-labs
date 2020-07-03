@@ -35,22 +35,7 @@
 
 #define MAX_HTABLE_SZ 500 // Size of the HashTable
 
-/**
- * Data Type For entries into the Hash Table
- */
-typedef struct Hash_URL_Entry {
-    char *url;
-    char state;
-    /**
-    * @state: A classification system for the url. Indicated what the data is.
-    * All URLs in the hash table should have already be visited and processed.
-    * @values:
-    * 0: currently being processed by another thread.
-    * 1: valid PNG
-    * 2: valid URLs to crawl (link to more URLs)
-    * 3: invalid URL
-    */
-} hash_url_entry_t;
+#define SEM_SHARE 0 // Only Share with Other Threads
 
 /**
  * Data Type For Input Parameters into the Thread Function
@@ -61,12 +46,23 @@ typedef struct web_crawler_input {
     Node_t **log; // A log of every URL visited in order
     struct hsearch_data *visited_urls; // Hash Table for all URLs
     int *numpicture; // Total Number of Pictures Left to Acquire
+    sem_t *urls_to_visit_sem; // Number of Items in the to_visit list
+    pthread_mutex_t *to_visit_m; // Access Control for to_visit
+    pthread_mutex_t *png_urls_m; // Access Control for png_urls
+    pthread_mutex_t *log_m; // Access Control for log
+    pthread_rwlock_t *hashtable_m; // Access Control for hashtable of all urls.
 } web_crawler_input_t;
 
 /**
  * Function To Crawl the Web and Find N PNG files. Is thread safe.
  */
 void *web_crawler(void *arg);
+
+/** TODO: Implement This Braden
+ * @brief: Function To Retrieve the information from the specified URL. Thread-safe
+ * See more below.
+ */
+int fetch_information(Node_t **to_visit, Node_t** png_urls, char* url);
 
 /**
  * Main Function to create and run the functions
@@ -124,6 +120,19 @@ int main(int argc, char *argv[]) {
         }
     }
 
+        // Semaphores, Mutexes, and Thread Control
+    sem_t urls_to_visit_sem; // Number of Items in the to_visit list
+    pthread_mutex_t to_visit_m; // Access Control for to_visit
+    pthread_mutex_t png_urls_m; // Access Control for png_urls
+    pthread_mutex_t log_m; // Access Control for log
+    pthread_rwlock_t hashtable_m; // Access Control for hashtable of all urls.
+    if ( sem_init(&urls_to_visit_sem, SEM_SHARE, 1) != 0 || pthread_mutex_init(&to_visit_m, NULL) != 0 || pthread_mutex_init(&png_urls_m, NULL) != 0 || pthread_mutex_init(&log_m, NULL) != 0 || pthread_wrlock_init(&hashtable_m, NULL) != 0) {
+        printf("sem_init(sem)\n");
+        free(logfile);
+        free(seed_url);
+        return -1;
+    }
+
         // Program Variables
     Node_t *png_urls = NULL; // The resulting png urls (of valid PNGs)
     Node_t *to_visit = NULL; // A list (stack) of the next URLs to Visit. After pop need to ensure the URL has not been checked before (but also check before putting in to save memory)
@@ -143,6 +152,11 @@ int main(int argc, char *argv[]) {
     crawler_params.log = &log;
     crawler_params.visited_urls = visited_urls;
     crawler_params.numpicture = &numpicture;
+    crawler_params.urls_to_visit_sem = &urls_to_visit_sem;
+    crawler_params.to_visit_m = &to_visit_m;
+    crawler_params.png_urls_m = &png_urls_m;
+    crawler_params.log_m = log_m;
+    crawler_params.hashtable_m = &hashtable_m;
 
     pthread_t pthread_ids[numthreads];
 
@@ -173,7 +187,15 @@ int main(int argc, char *argv[]) {
     printf("findpng2 execution time: %.6lf seconds\n", (double)((double)(program_end.tv_sec - program_start.tv_sec) + (((double)(program_end.tv_usec - program_start.tv_usec)) / 1000000.0)));
 
     /** @final_section: Cleanup **/
-    
+
+        //Destroy Semaphores and mutexes
+    sem_destroy(&urls_to_visit_sem);
+    pthread_mutex_destroy(&to_visit_m);
+    pthread_mutex_destroy(&png_urls_m);
+    pthread_mutex_destroy(&log_m);
+    pthread_rwlock_destroy(&hashtable_m);
+
+        //Free Memory
     hdestroy_r(visited_urls);
     free(visited_urls);
     free(logfile);
@@ -188,36 +210,132 @@ int main(int argc, char *argv[]) {
 
 /**
  * @brief: Function To Crawl the Web and Find N PNG files. Is thread safe.
- * @steps:
- * 1. Check to see if there are URLs in the to_visit stack
- *      a. If there is one, take it
- *      b. If not, check to see if any URLs are being processed.
- *          i. If there are, wait for it to finish.
- *          ii. If not, exit the program
- * 2. Check to see if the URL has been processed. (check HashTable)
- *      a. If it has, discard it. Go to step 1.
- *      b. If it hasn't, add to hashtable as searching. Perform cURL request.
- * 3. Once cURL is finished:
- *      a. Update value in hashtable
- *      b. If PNG, add to png_urls if numpngs still positive.
- *      c. Add the list of linked URLs to the to_visit
  */
 void *web_crawler(void *arg){
     /** @initial_setup: decode input and set up variables **/
-	// web_crawler_input_t *input_data = arg;
+        // Decode Input
+	web_crawler_input_t *input_data = arg;
+        // Variables
+    int findMorePNGs = 1; // Become 0 if numpngs is
+    char *url, *url_cpy;
+    ENTRY url_entry, *ret_entry;
+    url_entry.data = NULL;
+    int visited = 0;
+    Node_t *png_urls = NULL;
+    Node_t *to_visit = NULL;
 
-    // int findMorePNGs = 1; // Become 0 if numpngs is 
 
-    // while(findMorePNGs){
+    while(findMorePNGs){
+        // Wait for a PNG to enter the 
+        sem_wait(input_data->urls_to_visit_sem);
 
-    // }
+        /** @critical_section: take a url **/
+        pthread_mutex_lock(input_data->to_visit_m);
+        url = pop(input_data->to_visit);
+        pthread_mutex_unlock(input_data->to_visit_m);
+        /** @end_critical_section: **/
 
-    printf("Testing123\n");
+        url_entry.key = url;
+
+        /** @critical_section: see if the url is in the  **/
+        pthread_rwlock_wrlock(input_data->hashtable_m);
+        hsearch_r(url_entry, FIND, &ret_entry, input_data->visited_urls);
+        if(ret_entry == NULL){
+            hsearch_r(url_entry, ENTER, &ret_entry, input_data->visited_urls);
+            visited = 1;
+            if(ret_entry == NULL){
+                printf("Error: Hashtable is full\n");
+                pthread_rwlock_unlock(input_data->hashtable_m);
+                abort();
+            }
+        }
+        pthread_rwlock_unlock(input_data->hashtable_m);
+        /** @end_critical_section: **/
+
+        // Perform Request if URL has not been visited
+        if(!visited){
+            //Perform cURL Request and Retrieve Data
+            if(fetch_information(&to_visit, &png_urls, url) != 0){
+                printf("Problem Fetching Information for %s\n", url);
+            }else{
+                /** @critical_section: insert into log **/
+                pthread_mutex_lock(input_data->log_m);
+                push(input_data->log, url);
+                pthread_mutex_unlock(input_data->log_m);
+                /** @end_critical_section: **/
+
+                if(png_urls != NULL){ //TODO: replace with png detection from cURL request.
+                    while(png_urls != NULL){
+                        // Make Copy of String
+                        url_cpy = malloc((1 + strlen(URL_TO_USE)) * (sizeof(char)));
+                        strcpy(url_cpy, URL_TO_USE);
+
+                        /** @critical_section: insert into png_urls **/
+                        pthread_mutex_lock(input_data->png_urls_m);
+                        if(input_data->numpicture > 0){
+                            input_data->numpicture--;
+                            push(input_data->png_urls, url_cpy);
+                        }else{
+                            findMorePNGs = 0;
+                            i = URL_TO_PNG.length;
+                        }
+                        pthread_mutex_unlock(input_data->png_urls_m);
+                        /** @end_critical_section: **/
+                    }
+                }
+
+                if(findMorePNGs && to_visit != NULL){ //TODO: replace with future URLs to look thru if exists
+                    /** @critical_section: add URLs to visit (after checking if already searched) **/
+                    pthread_rwlock_rdlock(input_data->hashtable_m); // only a read lock since just reading
+                    for(int i=0;i<ToVisit.length;i++){
+                        url_entry.key = INSERT_URL_HERE;
+                        hsearch_r(url_entry, FIND, &ret_entry, input_data->visited_urls);
+                        if(ret_entry == NULL){
+                            /** @critical_section: inner critical section for pushing to the linked list **/
+                            pthread_mutex_lock(input_data->to_visit_m);
+                            push(input_data->to_visit, url_entry.key);
+                            pthread_mutex_unlock(input_data->to_visit_m);
+                            /** @end_critical_section: **/
+
+                            // Post to indicate another URL on the to_visit list
+                            sem_post(input_data->urls_to_visit_sem);
+                        }
+                    }
+                    pthread_rwlock_unlock(input_data->hashtable_m);
+                    /** @end_critical_section: **/
+                }
+            }
+        }
+        
+
+        if(findMorePNGs){
+            /** @critical_section: check to see if end condition met **/
+            pthread_mutex_lock(input_data->png_urls_m);
+            if(input_data->numpicture <= 0){
+                findMorePNGs = 0;
+            }
+            pthread_mutex_unlock(input_data->png_urls_m);
+            /** @end_critical_section: **/
+        }
+
+        visited = 0;
+    }
 
     return NULL;
 }
 
-//Done when:
-// 1. There are no more items in the to_visit list && there are no more URLs being processed
-// or 
-// 2. The max number of PNGs has been found
+/** TODO: Implement This Braden
+ * @brief: Function To Retrieve the information from the specified URL. Thread-safe
+ * @params:
+ * to_visit: pointer to an empty linked list. Use push function to add urls to visit into the list.
+ * png_urls: pointer to an empty linked list. Use push function to add png urls into the list.
+ * url: pointer to a url. Perform cURL on this url.
+ * @return:
+ * 0: success
+ * 1: error
+ * @note: for the linked lists, declare the data values on the heap. Will be deallocated by caller.
+ * @note: if to_visit or png_urls are empty, they should be left as passed in. Only call push when adding a value.
+ */
+int fetch_information(Node_t **to_visit, Node_t** png_urls, char* url){
+
+}
