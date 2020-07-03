@@ -38,23 +38,6 @@
 #define SEM_SHARE 0 // Only Share with Other Threads
 
 /**
- * Data Type For entries into the Hash Table
- */
-typedef struct Hash_URL_Entry {
-    char *url;
-    char state;
-    /**
-    * @state: A classification system for the url. Indicated what the data is.
-    * All URLs in the hash table should have already be visited and processed.
-    * @values:
-    * 0: currently being processed by another thread.
-    * 1: valid PNG
-    * 2: valid URLs to crawl (link to more URLs)
-    * 3: invalid URL
-    */
-} hash_url_entry_t;
-
-/**
  * Data Type For Input Parameters into the Thread Function
  */
 typedef struct web_crawler_input {
@@ -221,28 +204,110 @@ int main(int argc, char *argv[]) {
 
 /**
  * @brief: Function To Crawl the Web and Find N PNG files. Is thread safe.
- * @steps:
- * 1. Check to see if there are URLs in the to_visit stack
- *      a. If there is one, take it
- *      b. If not, check to see if any URLs are being processed.
- *          i. If there are, wait for it to finish.
- *          ii. If not, exit the program
- * 2. Check to see if the URL has been processed. (check HashTable)
- *      a. If it has, discard it. Go to step 1.
- *      b. If it hasn't, add to hashtable as searching. Perform cURL request.
- * 3. Once cURL is finished:
- *      a. Update value in hashtable
- *      b. If PNG, add to png_urls if numpngs still positive.
- *      c. Add the list of linked URLs to the to_visit
  */
 void *web_crawler(void *arg){
     /** @initial_setup: decode input and set up variables **/
+        // Decode Input
 	web_crawler_input_t *input_data = arg;
-
-    int findMorePNGs = 1; // Become 0 if numpngs is 
+        // Variables
+    int findMorePNGs = 1; // Become 0 if numpngs is
+    char *url, *url_cpy;
+    ENTRY url_entry, *ret_entry;
+    url_entry.data = NULL;
+    int visited = 0;
 
     while(findMorePNGs){
+        // Wait for a PNG to enter the 
+        sem_wait(input_data->urls_to_visit_sem);
 
+        /** @critical_section: take a url **/
+        pthread_mutex_lock(input_data->to_visit_m);
+        url = pop(input_data->to_visit);
+        pthread_mutex_unlock(input_data->to_visit_m);
+        /** @end_critical_section: **/
+
+        url_entry.key = url;
+
+        /** @critical_section: see if the url is in the  **/
+        pthread_rwlock_wrlock(input_data->hashtable_m);
+        hsearch_r(url_entry, FIND, &ret_entry, input_data->visited_urls);
+        if(ret_entry == NULL){
+            hsearch_r(url_entry, ENTER, &ret_entry, input_data->visited_urls);
+            visited = 1;
+            if(ret_entry == NULL){
+                printf("Error: Hashtable is full\n");
+                pthread_rwlock_unlock(input_data->hashtable_m);
+                abort();
+            }
+        }
+        pthread_rwlock_unlock(input_data->hashtable_m);
+        /** @end_critical_section: **/
+
+        // Perform Request if URL has not been visited
+        if(!visited){
+            //Perform cURL Request and Retrieve Data
+            //TODO: Insert cURL Call Function Here.
+
+            /** @critical_section: insert into log **/
+            pthread_mutex_lock(input_data->log_m);
+            push(input_data->log, url);
+            pthread_mutex_unlock(input_data->log_m);
+            /** @end_critical_section: **/
+
+            if(urlToPNGs){ //TODO: replace with png detection from cURL request.
+                for(int i=0;i<URL_TO_PNG.length;i++){
+                    // Make Copy of String
+                    url_cpy = malloc((1 + strlen(URL_TO_USE)) * (sizeof(char)));
+                    strcpy(url_cpy, URL_TO_USE);
+
+                    /** @critical_section: insert into png_urls **/
+                    pthread_mutex_lock(input_data->png_urls_m);
+                    if(input_data->numpicture > 0){
+                        input_data->numpicture--;
+                        push(input_data->png_urls, url_cpy);
+                    }else{
+                        findMorePNGs = 0;
+                        i = URL_TO_PNG.length;
+                    }
+                    pthread_mutex_unlock(input_data->png_urls_m);
+                    /** @end_critical_section: **/
+                }
+            }
+
+            if(findMorePNGs && urlToVisit){ //TODO: replace with future URLs to look thru if exists
+                /** @critical_section: add URLs to visit (after checking if already searched) **/
+                pthread_rwlock_rdlock(input_data->hashtable_m); // only a read lock since just reading
+                for(int i=0;i<ToVisit.length;i++){
+                    url_entry.key = INSERT_URL_HERE;
+                    hsearch_r(url_entry, FIND, &ret_entry, input_data->visited_urls);
+                    if(ret_entry == NULL){
+                        /** @critical_section: inner critical section for pushing to the linked list **/
+                        pthread_mutex_lock(input_data->to_visit_m);
+                        push(input_data->to_visit, url_entry.key);
+                        pthread_mutex_unlock(input_data->to_visit_m);
+                        /** @end_critical_section: **/
+
+                        // Post to indicate another URL on the to_visit list
+                        sem_post(input_data->urls_to_visit_sem);
+                    }
+                }
+                pthread_rwlock_unlock(input_data->hashtable_m);
+                /** @end_critical_section: **/
+            }
+        }
+        
+        
+        if(findMorePNGs){
+            /** @critical_section: check to see if end condition met **/
+            pthread_mutex_lock(input_data->png_urls_m);
+            if(input_data->numpicture <= 0){
+                findMorePNGs = 0;
+            }
+            pthread_mutex_unlock(input_data->png_urls_m);
+            /** @end_critical_section: **/
+        }
+
+        visited = 0;
     }
 
     return NULL;
