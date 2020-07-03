@@ -35,6 +35,8 @@
 
 #define MAX_HTABLE_SZ 500 // Size of the HashTable
 
+#define SEM_SHARE 0 // Only Share with Other Threads
+
 /**
  * Data Type For entries into the Hash Table
  */
@@ -61,6 +63,11 @@ typedef struct web_crawler_input {
     Node_t **log; // A log of every URL visited in order
     struct hsearch_data *visited_urls; // Hash Table for all URLs
     int *numpicture; // Total Number of Pictures Left to Acquire
+    sem_t *urls_to_visit_sem; // Number of Items in the to_visit list
+    pthread_mutex_t *to_visit_m; // Access Control for to_visit
+    pthread_mutex_t *png_urls_m; // Access Control for png_urls
+    pthread_mutex_t *log_m; // Access Control for log
+    pthread_rwlock_t *hashtable_m; // Access Control for hashtable of all urls.
 } web_crawler_input_t;
 
 /**
@@ -124,6 +131,19 @@ int main(int argc, char *argv[]) {
         }
     }
 
+        // Semaphores, Mutexes, and Thread Control
+    sem_t urls_to_visit_sem; // Number of Items in the to_visit list
+    pthread_mutex_t to_visit_m; // Access Control for to_visit
+    pthread_mutex_t png_urls_m; // Access Control for png_urls
+    pthread_mutex_t log_m; // Access Control for log
+    pthread_rwlock_t hashtable_m; // Access Control for hashtable of all urls.
+    if ( sem_init(&urls_to_visit_sem, SEM_SHARE, 1) != 0 || pthread_mutex_init(&to_visit_m, NULL) != 0 || pthread_mutex_init(&png_urls_m, NULL) != 0 || pthread_mutex_init(&log_m, NULL) != 0 || pthread_wrlock_init(&hashtable_m, NULL) != 0) {
+        printf("sem_init(sem)\n");
+        free(logfile);
+        free(seed_url);
+        return -1;
+    }
+
         // Program Variables
     Node_t *png_urls = NULL; // The resulting png urls (of valid PNGs)
     Node_t *to_visit = NULL; // A list (stack) of the next URLs to Visit. After pop need to ensure the URL has not been checked before (but also check before putting in to save memory)
@@ -143,6 +163,11 @@ int main(int argc, char *argv[]) {
     crawler_params.log = &log;
     crawler_params.visited_urls = visited_urls;
     crawler_params.numpicture = &numpicture;
+    crawler_params.urls_to_visit_sem = &urls_to_visit_sem;
+    crawler_params.to_visit_m = &to_visit_m;
+    crawler_params.png_urls_m = &png_urls_m;
+    crawler_params.log_m = log_m;
+    crawler_params.hashtable_m = &hashtable_m;
 
     pthread_t pthread_ids[numthreads];
 
@@ -173,7 +198,15 @@ int main(int argc, char *argv[]) {
     printf("findpng2 execution time: %.6lf seconds\n", (double)((double)(program_end.tv_sec - program_start.tv_sec) + (((double)(program_end.tv_usec - program_start.tv_usec)) / 1000000.0)));
 
     /** @final_section: Cleanup **/
-    
+
+        //Destroy Semaphores and mutexes
+    sem_destroy(&urls_to_visit_sem);
+    pthread_mutex_destroy(&to_visit_m);
+    pthread_mutex_destroy(&png_urls_m);
+    pthread_mutex_destroy(&log_m);
+    pthread_rwlock_destroy(&hashtable_m);
+
+        //Free Memory
     hdestroy_r(visited_urls);
     free(visited_urls);
     free(logfile);
@@ -204,15 +237,13 @@ int main(int argc, char *argv[]) {
  */
 void *web_crawler(void *arg){
     /** @initial_setup: decode input and set up variables **/
-	// web_crawler_input_t *input_data = arg;
+	web_crawler_input_t *input_data = arg;
 
-    // int findMorePNGs = 1; // Become 0 if numpngs is 
+    int findMorePNGs = 1; // Become 0 if numpngs is 
 
-    // while(findMorePNGs){
+    while(findMorePNGs){
 
-    // }
-
-    printf("Testing123\n");
+    }
 
     return NULL;
 }
