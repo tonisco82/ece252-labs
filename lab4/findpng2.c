@@ -21,6 +21,7 @@
 
 //Included Utility Code
 #include "./utils/linkedList.c"
+#include "./utils/cURL/curl_xml_fns.c"
 
 #define SEED_URL "http://ece252-1.uwaterloo.ca/lab4/"
 #define ECE252_HEADER "X-Ece252-Fragment: "
@@ -337,5 +338,37 @@ void *web_crawler(void *arg){
  * @note: if to_visit or png_urls are empty, they should be left as passed in. Only call push when adding a value.
  */
 int fetch_information(Node_t **to_visit, Node_t** png_urls, char* url){
+    CURL *curl_handle;
+    CURLcode res;
+    RECV_BUF recv_buf;
 
+    curl_global_init(CURL_GLOBAL_DEFAULT);
+    curl_handle = easy_handle_init(&recv_buf, *url);
+
+    if ( curl_handle == NULL ) {
+        fprintf(stderr, "Curl initialization failed. Exiting...\n");
+        curl_global_cleanup();
+        return 1;
+    }
+    /* get it! */
+    res = curl_easy_perform(curl_handle);
+
+    if( res != CURLE_OK) {
+        fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+        cleanup(curl_handle, &recv_buf);
+        return 1;
+    } else {
+    printf("%lu bytes received in memory %p, seq=%d.\n", \
+               recv_buf.size, recv_buf.buf, recv_buf.seq);
+    }
+
+    /* process the download data */
+    if (process_data(curl_handle, &recv_buf, to_visit, png_urls) !=0){
+        cleanup(curl_handle, &recv_buf);
+        return 1;
+    }
+
+    /* cleaning up */
+    cleanup(curl_handle, &recv_buf);
+    return 0;
 }

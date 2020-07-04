@@ -65,7 +65,7 @@ typedef struct recv_buf2 {
 
 htmlDocPtr mem_getdoc(char *buf, int size, const char *url);
 xmlXPathObjectPtr getnodeset (xmlDocPtr doc, xmlChar *xpath);
-int find_http(char *fname, int size, int follow_relative_links, const char *base_url);
+int find_http(char *fname, int size, int follow_relative_links, const char *base_url, Node_t **to_visit);
 size_t header_cb_curl(char *p_recv, size_t size, size_t nmemb, void *userdata);
 size_t write_cb_curl3(char *p_recv, size_t size, size_t nmemb, void *p_userdata);
 int recv_buf_init(RECV_BUF *ptr, size_t max_size);
@@ -73,9 +73,9 @@ int recv_buf_cleanup(RECV_BUF *ptr);
 void cleanup(CURL *curl, RECV_BUF *ptr);
 int write_file(const char *path, const void *in, size_t len);
 CURL *easy_handle_init(RECV_BUF *ptr, const char *url);
-int process_data(CURL *curl_handle, RECV_BUF *p_recv_buf);
+int process_data(CURL *curl_handle, RECV_BUF *p_recv_buf, Node_t **to_visit, Node_t **png_urls);
 
-
+//given function
 htmlDocPtr mem_getdoc(char *buf, int size, const char *url)
 {
     int opts = HTML_PARSE_NOBLANKS | HTML_PARSE_NOERROR | \
@@ -89,6 +89,7 @@ htmlDocPtr mem_getdoc(char *buf, int size, const char *url)
     return doc;
 }
 
+//given function
 xmlXPathObjectPtr getnodeset (xmlDocPtr doc, xmlChar *xpath)
 {
 	
@@ -114,7 +115,8 @@ xmlXPathObjectPtr getnodeset (xmlDocPtr doc, xmlChar *xpath)
     return result;
 }
 
-int find_http(char *buf, int size, int follow_relative_links, const char *base_url)
+//given function, edited
+int find_http(char *buf, int size, int follow_relative_links, const char *base_url, Node_t **to_visit)
 {
 
     int i;
@@ -123,6 +125,7 @@ int find_http(char *buf, int size, int follow_relative_links, const char *base_u
     xmlNodeSetPtr nodeset;
     xmlXPathObjectPtr result;
     xmlChar *href;
+    char* recordurl;
 		
     if (buf == NULL) {
         return 1;
@@ -140,7 +143,9 @@ int find_http(char *buf, int size, int follow_relative_links, const char *base_u
                 xmlFree(old);
             }
             if ( href != NULL && !strncmp((const char *)href, "http", 4) ) {
-                printf("href: %s\n", href);
+                *recordurl = (char*) href;
+                //push to linked list
+                push(to_visit, recordurl);
             }
             xmlFree(href);
         }
@@ -360,44 +365,38 @@ CURL *easy_handle_init(RECV_BUF *ptr, const char *url)
     return curl_handle;
 }
 
-int process_html(CURL *curl_handle, RECV_BUF *p_recv_buf)
+int process_html(CURL *curl_handle, RECV_BUF *p_recv_buf, Node_t **to_visit)
 {
-    char fname[256];
     int follow_relative_link = 1;
     char *url = NULL; 
-    pid_t pid =getpid();
 
     curl_easy_getinfo(curl_handle, CURLINFO_EFFECTIVE_URL, &url);
-    find_http(p_recv_buf->buf, p_recv_buf->size, follow_relative_link, url); 
-    sprintf(fname, "./output_%d.html", pid);
-    return write_file(fname, p_recv_buf->buf, p_recv_buf->size);
+    find_http(p_recv_buf->buf, p_recv_buf->size, follow_relative_link, url, to_visit); 
+    return 0;
 }
 
-int process_png(CURL *curl_handle, RECV_BUF *p_recv_buf)
+int process_png(CURL *curl_handle, RECV_BUF *p_recv_buf, Node_t **png_urls)
 {
-    pid_t pid =getpid();
-    char fname[256];
     char *eurl = NULL;          /* effective URL */
     curl_easy_getinfo(curl_handle, CURLINFO_EFFECTIVE_URL, &eurl);
     if ( eurl != NULL) {
-        printf("The PNG url is: %s\n", eurl);
+        push(png_urls, eurl);
+    } else {
+        return 1;
     }
-
-    sprintf(fname, "./output_%d_%d.png", p_recv_buf->seq, pid);
-    return write_file(fname, p_recv_buf->buf, p_recv_buf->size);
+    return 0;
 }
 /**
- * @brief process teh download data by curl
+ * @brief process to download data by curl
  * @param CURL *curl_handle is the curl handler
  * @param RECV_BUF p_recv_buf contains the received data. 
- * @return 0 on success; non-zero otherwise
+ * @return 0 on success; 1 on fail
  */
 
-int process_data(CURL *curl_handle, RECV_BUF *p_recv_buf)
+//given function, edited
+int process_data(CURL *curl_handle, RECV_BUF *p_recv_buf, Node_t **to_visit, Node_t **png_urls)
 {
     CURLcode res;
-    char fname[256];
-    pid_t pid =getpid();
     long response_code;
 
     res = curl_easy_getinfo(curl_handle, CURLINFO_RESPONSE_CODE, &response_code);
@@ -420,18 +419,17 @@ int process_data(CURL *curl_handle, RECV_BUF *p_recv_buf)
     }
 
     if ( strstr(ct, CT_HTML) ) {
-        return process_html(curl_handle, p_recv_buf);
+        return process_html(curl_handle, p_recv_buf, to_visit);
     } else if ( strstr(ct, CT_PNG) ) {
-        return process_png(curl_handle, p_recv_buf);
-    } else {
-        sprintf(fname, "./output_%d", pid);
+        return process_png(curl_handle, p_recv_buf, png_urls);
     }
-
-    return write_file(fname, p_recv_buf->buf, p_recv_buf->size);
+    //if its something else (not HTML or PNG), ignore it    
+    return 0;
 }
 
 
 ////////////////use these calls to structure findpng2
+/*
 int main( int argc, char** argv ) 
 {
     CURL *curl_handle;
@@ -454,7 +452,6 @@ int main( int argc, char** argv )
         curl_global_cleanup();
         abort();
     }
-    /* get it! */
     res = curl_easy_perform(curl_handle);
 
     if( res != CURLE_OK) {
@@ -466,10 +463,10 @@ int main( int argc, char** argv )
                recv_buf.size, recv_buf.buf, recv_buf.seq);
     }
 
-    /* process the download data */
+    // process the download data 
     process_data(curl_handle, &recv_buf);
 
-    /* cleaning up */
+    // cleaning up
     cleanup(curl_handle, &recv_buf);
     return 0;
-}
+}*/
