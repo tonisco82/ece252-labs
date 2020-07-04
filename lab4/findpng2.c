@@ -49,11 +49,13 @@ typedef struct web_crawler_input {
     Node_t **log; // A log of every URL visited in order
     struct hsearch_data *visited_urls; // Hash Table for all URLs
     int *numpicture; // Total Number of Pictures Left to Acquire
-    sem_t *urls_to_visit_sem; // Number of Items in the to_visit list
+    int *num_waiting; // The number of threads currently waiting for a URL to process
+    pthread_cond_t *to_visit_threshold_cv; // Conditional Variable for Signalling
     pthread_mutex_t *to_visit_m; // Access Control for to_visit
     pthread_mutex_t *png_urls_m; // Access Control for png_urls
     pthread_mutex_t *log_m; // Access Control for log
     pthread_rwlock_t *hashtable_m; // Access Control for hashtable of all urls.
+    int total_threads;
 } web_crawler_input_t;
 
 /**
@@ -101,14 +103,14 @@ int main(int argc, char *argv[]) {
         case 't':
             numthreads = strtoul(optarg, NULL, 10);
             if (numthreads < 1){
-            	printf("%s: number of threads must be 1 or more -- 't'\n", argv[0]);
+            	perror("number of threads must be 1 or more -- 't'\n");
                 return -1;
             }
             break;
         case 'm':
             numpicture = strtoul(optarg, NULL, 10);
             if (numpicture < 1) {
-                printf("%s: number of picture must be 1 or more -- 'n'\n", argv[0]);
+                perror("number of picture must be 1 or more -- 'n'\n");
                 return -1;
             }
             break;
@@ -116,29 +118,25 @@ int main(int argc, char *argv[]) {
             strcpy(logfile, optarg);
             break;
         default:
-            printf("Usage example: ./findpng2 -t 10 -m 50 -v png_urls.txt\n");
+            perror("Usage example: ./findpng2 -t 10 -m 50 -v png_urls.txt\n");
             free(logfile);
             free(seed_url);
             return -1;
         }
     }
 
-    printf("Fill Inputs Complete\n");
-
         // Semaphores, Mutexes, and Thread Control
-    sem_t urls_to_visit_sem; // Number of Items in the to_visit list
+    pthread_cond_t to_visit_threshold_cv; // Conditional Variable for Signalling
     pthread_mutex_t to_visit_m; // Access Control for to_visit
     pthread_mutex_t png_urls_m; // Access Control for png_urls
     pthread_mutex_t log_m; // Access Control for log
     pthread_rwlock_t hashtable_m; // Access Control for hashtable of all urls.
-    if (sem_init(&urls_to_visit_sem, SEM_SHARE, 1) != 0 || pthread_mutex_init(&to_visit_m, NULL) != 0 || pthread_mutex_init(&png_urls_m, NULL) != 0 || pthread_mutex_init(&log_m, NULL) != 0 || pthread_rwlock_init(&hashtable_m, NULL) != 0) {
-        printf("sem_init(sem)\n");
+    if (pthread_cond_init(&to_visit_threshold_cv, NULL) != 0 || pthread_mutex_init(&to_visit_m, NULL) != 0 || pthread_mutex_init(&png_urls_m, NULL) != 0 || pthread_mutex_init(&log_m, NULL) != 0 || pthread_rwlock_init(&hashtable_m, NULL) != 0) {
+        perror("sem_init(sem)\n");
         free(logfile);
         free(seed_url);
         return -1;
     }
-
-    printf("Semaphores Mut And Thread control compelte\n");
 
         // Program Variables
     Node_t *png_urls = NULL; // The resulting png urls (of valid PNGs)
@@ -146,12 +144,14 @@ int main(int argc, char *argv[]) {
     Node_t *log = NULL; // A log of every URL visited in order
     struct hsearch_data *visited_urls = calloc(1, sizeof(struct hsearch_data));
     if(hcreate_r(MAX_HTABLE_SZ, visited_urls) == 0){
-        printf("Error: insufficient space to create hashtable\n");
+        perror("Error: insufficient space to create hashtable\n");
         free(logfile);
         free(seed_url);
         free(visited_urls);
         return -1;
     }
+
+    int num_waiting = 0; // Track the number of threads waiting for a URL to process
 
     web_crawler_input_t crawler_params;
     crawler_params.png_urls = &png_urls;
@@ -159,15 +159,15 @@ int main(int argc, char *argv[]) {
     crawler_params.log = &log;
     crawler_params.visited_urls = visited_urls;
     crawler_params.numpicture = &numpicture;
-    crawler_params.urls_to_visit_sem = &urls_to_visit_sem;
+    crawler_params.num_waiting = &num_waiting;
+    crawler_params.to_visit_threshold_cv = &to_visit_threshold_cv;
     crawler_params.to_visit_m = &to_visit_m;
     crawler_params.png_urls_m = &png_urls_m;
     crawler_params.log_m = &log_m;
     crawler_params.hashtable_m = &hashtable_m;
+    crawler_params.total_threads = numthreads;
 
     pthread_t pthread_ids[numthreads];
-
-    printf("All initiation compelte\n");
 
     /** @main_section: Start Main Part of the Program **/
 
@@ -179,14 +179,10 @@ int main(int argc, char *argv[]) {
         pthread_create(pthread_ids + i, NULL, web_crawler, (void *)(&crawler_params));
     }
 
-    printf("All threads spawned\n");
-
         // Join Threads
     for(int i=0; i<numthreads; i++){
         pthread_join(pthread_ids[i], NULL);
     }
-
-    printf("All threads joined\n");
 
     /** @output_section: Output Timing Result **/
 
@@ -203,7 +199,7 @@ int main(int argc, char *argv[]) {
     /** @final_section: Cleanup **/
 
         //Destroy Semaphores and mutexes
-    sem_destroy(&urls_to_visit_sem);
+    pthread_cond_destroy(&to_visit_threshold_cv);
     pthread_mutex_destroy(&to_visit_m);
     pthread_mutex_destroy(&png_urls_m);
     pthread_mutex_destroy(&log_m);
@@ -213,7 +209,6 @@ int main(int argc, char *argv[]) {
     hdestroy_r(visited_urls);
     free(visited_urls);
     free(logfile);
-    //free(seed_url); // Should be freed when removed from the list.
     freeMemory(png_urls);
     freeMemory(to_visit);
     freeMemory(log);
@@ -238,34 +233,39 @@ void *web_crawler(void *arg){
     Node_t *png_urls = NULL;
     Node_t *to_visit = NULL;
 
-    printf("In thread: all initiation complete\n");
-
 
     while(findMorePNGs){
-        printf("In thread: wait for urls to visit\n");
-        // Wait for a PNG to enter the 
-        sem_wait(input_data->urls_to_visit_sem);
 
-        printf("In thread: url available to visit\n");
-
-        /** @critical_section: take a url **/
+        /** @critical_section: Waiting For A URL, otherwise take a URL **/
         pthread_mutex_lock(input_data->to_visit_m);
+            // If no URLs available, wait for one
+        if((*(input_data->to_visit)) == NULL){
+            (*(input_data->num_waiting))++;
+            if(*(input_data->num_waiting) < input_data->total_threads){
+                pthread_cond_wait(input_data->to_visit_threshold_cv, input_data->to_visit_m);
+            }
+            if(*(input_data->num_waiting) == input_data->total_threads && (*(input_data->to_visit)) == NULL){
+                pthread_cond_broadcast(input_data->to_visit_threshold_cv);
+                findMorePNGs = 0;
+                pthread_mutex_unlock(input_data->to_visit_m);
+                continue;
+            }
+            (*(input_data->num_waiting))--;
+        }
         url = pop(input_data->to_visit);
         pthread_mutex_unlock(input_data->to_visit_m);
         /** @end_critical_section: **/
 
         url_entry.key = url;
-        printf("In thread: decoding url: %s\n", url);
 
         /** @critical_section: see if the url is in the hashtable **/
         pthread_rwlock_wrlock(input_data->hashtable_m);
         hsearch_r(url_entry, FIND, &ret_entry, input_data->visited_urls);
         if(ret_entry == NULL){
-            printf("In thread: url %s not yet looked at. Performing request\n", url);
             hsearch_r(url_entry, ENTER, &ret_entry, input_data->visited_urls);
             visited = 1;
             if(ret_entry == NULL){
-                printf("Error: Hashtable is full\n");
+                perror("Error: Hashtable is full\n");
                 pthread_rwlock_unlock(input_data->hashtable_m);
                 abort();
             }
@@ -275,35 +275,25 @@ void *web_crawler(void *arg){
 
         // Perform Request if URL has not been visited
         if(visited){
+            /** @critical_section: insert into log **/
+            pthread_mutex_lock(input_data->log_m);
+            push(input_data->log, url);
+            pthread_mutex_unlock(input_data->log_m);
+            /** @end_critical_section: **/
+
             //Perform cURL Request and Retrieve Data
-            if(fetch_information(&to_visit, &png_urls, url) != 0){
-                printf("Problem Fetching Information for %s\n", url);
-            }else{
-                printf("In thread: adding to log\n");
-                /** @critical_section: insert into log **/
-                pthread_mutex_lock(input_data->log_m);
-                push(input_data->log, url);
-                pthread_mutex_unlock(input_data->log_m);
-                /** @end_critical_section: **/
-
-                printf("In thread: added to log, checking for attached urls\n");
-
+            if(fetch_information(&to_visit, &png_urls, url) == 0){
                 if(png_urls != NULL){
-                    printf("In thread: retrieved a PNG!\n");
                     while(png_urls != NULL){
                         // Make Copy of String
                         url_cpy = pop(&png_urls);
-                        printf("Adding %s to png stack\n", url_cpy);
                         /** @critical_section: insert into png_urls **/
                         pthread_mutex_lock(input_data->png_urls_m);
                         if(*(input_data->numpicture) > 0){
-                            printf("Pushing to resulting png urls.\n");
-                            *(input_data->numpicture)--;
+                            (*(input_data->numpicture))--;
                             push(input_data->png_urls, url_cpy);
                         }
-                        printf("PNGs left to retrieve: %d\n", *(input_data->numpicture));
                         if(*(input_data->numpicture) <= 0){
-                            printf("Reached base case!!!!!!!\n");
                             findMorePNGs = 0;
                             freeMemory(png_urls);
                             png_urls = NULL;
@@ -312,34 +302,25 @@ void *web_crawler(void *arg){
                         /** @end_critical_section: **/
                     }
                 }else if(to_visit != NULL){
-                    printf("In thread: retrieved a list of links!\n");
                     /** @critical_section: add URLs to visit (after checking if already searched) **/
                     pthread_rwlock_rdlock(input_data->hashtable_m); // only a read lock since just reading
                     while(to_visit != NULL){
                         url_entry.key = pop(&to_visit);
-                        printf("Checking to see if %s should be added to to_visit\n", url_entry.key);
                         hsearch_r(url_entry, FIND, &ret_entry, input_data->visited_urls);
                         if(ret_entry == NULL){
-                            printf("Adding %s to to_visit\n", url_entry.key);
-                            /** @critical_section: inner critical section for pushing to the linked list **/
+                            /** @critical_section: inner critical section for pushing to the linked list and signalling push **/
                             pthread_mutex_lock(input_data->to_visit_m);
                             push(input_data->to_visit, url_entry.key);
+                            pthread_cond_signal(input_data->to_visit_threshold_cv);
                             pthread_mutex_unlock(input_data->to_visit_m);
                             /** @end_critical_section: **/
-
-                            // Post to indicate another URL on the to_visit list
-                            sem_post(input_data->urls_to_visit_sem);
                         }
                     }
                     pthread_rwlock_unlock(input_data->hashtable_m);
                     /** @end_critical_section: **/
                 }
-
-                printf("Added more urls, moving onto next\n");
             }
         }
-        
-        printf("In thread: final check to see if all pngs retrieved\n");
 
         if(findMorePNGs){
             /** @critical_section: check to see if end condition met **/
@@ -350,8 +331,6 @@ void *web_crawler(void *arg){
             pthread_mutex_unlock(input_data->png_urls_m);
             /** @end_critical_section: **/
         }
-
-        printf("In thread: value of findMorePNGs: %d\n", findMorePNGs);
 
         visited = 0;
     }
@@ -380,7 +359,7 @@ int fetch_information(Node_t **to_visit, Node_t** png_urls, char* url){
     curl_handle = easy_handle_init(&recv_buf, url);
 
     if ( curl_handle == NULL ) {
-        fprintf(stderr, "Curl initialization failed. Exiting...\n");
+        //fprintf(stderr, "Curl initialization failed. Exiting...\n");
         curl_global_cleanup();
         return 1;
     }
@@ -388,11 +367,11 @@ int fetch_information(Node_t **to_visit, Node_t** png_urls, char* url){
     res = curl_easy_perform(curl_handle);
 
     if( res != CURLE_OK) {
-        fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+        //fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
         cleanup(curl_handle, &recv_buf);
         return 1;
     } else {
-        printf("%lu bytes received in memory %p, seq=%d.\n", recv_buf.size, recv_buf.buf, recv_buf.seq);
+        //printf("%lu bytes received in memory %p, seq=%d.\n", recv_buf.size, recv_buf.buf, recv_buf.seq);
     }
 
     /* process the download data */

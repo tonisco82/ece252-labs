@@ -83,7 +83,7 @@ htmlDocPtr mem_getdoc(char *buf, int size, const char *url)
     htmlDocPtr doc = htmlReadMemory(buf, size, url, NULL, opts);
     
     if ( doc == NULL ) {
-        fprintf(stderr, "Document not parsed successfully.\n");
+        //fprintf(stderr, "Document not parsed successfully.\n");
         return NULL;
     }
     return doc;
@@ -98,18 +98,18 @@ xmlXPathObjectPtr getnodeset (xmlDocPtr doc, xmlChar *xpath)
 
     context = xmlXPathNewContext(doc);
     if (context == NULL) {
-        printf("Error in xmlXPathNewContext\n");
+        //perror("Error in xmlXPathNewContext\n");
         return NULL;
     }
     result = xmlXPathEvalExpression(xpath, context);
     xmlXPathFreeContext(context);
     if (result == NULL) {
-        printf("Error in xmlXPathEvalExpression\n");
+        //perror("Error in xmlXPathEvalExpression\n");
         return NULL;
     }
     if(xmlXPathNodeSetIsEmpty(result->nodesetval)){
         xmlXPathFreeObject(result);
-        printf("No result\n");
+        //perror("No result\n");
         return NULL;
     }
     return result;
@@ -145,7 +145,6 @@ int find_http(char *buf, int size, int follow_relative_links, const char *base_u
             if ( href != NULL && !strncmp((const char *)href, "http", 4) ) {
                 recordurl = (char *) malloc((1 + strlen((const char *)href)) * sizeof(char));
                 strcpy(recordurl, (char *)href);
-                recordurl = (char*) href;
                 //push to linked list
                 push(to_visit, recordurl);
             }
@@ -177,7 +176,7 @@ size_t header_cb_curl(char *p_recv, size_t size, size_t nmemb, void *userdata)
     RECV_BUF *p = userdata;
 
 #ifdef DEBUG1_
-    printf("%s", p_recv);
+    //printf("%s", p_recv);
 #endif /* DEBUG1_ */
     if (realsize > strlen(ECE252_HEADER) &&
 	strncmp(p_recv, ECE252_HEADER, strlen(ECE252_HEADER)) == 0) {
@@ -210,7 +209,7 @@ size_t write_cb_curl3(char *p_recv, size_t size, size_t nmemb, void *p_userdata)
         size_t new_size = p->max_size + max(BUF_INC, realsize + 1);   
         char *q = realloc(p->buf, new_size);
         if (q == NULL) {
-            perror("realloc"); /* out of memory */
+            //perror("realloc"); /* out of memory */
             return -1;
         }
         p->buf = q;
@@ -275,23 +274,23 @@ int write_file(const char *path, const void *in, size_t len)
     FILE *fp = NULL;
 
     if (path == NULL) {
-        fprintf(stderr, "write_file: file name is null!\n");
+        //fprintf(stderr, "write_file: file name is null!\n");
         return -1;
     }
 
     if (in == NULL) {
-        fprintf(stderr, "write_file: input data is null!\n");
+        //fprintf(stderr, "write_file: input data is null!\n");
         return -1;
     }
 
     fp = fopen(path, "wb");
     if (fp == NULL) {
-        perror("fopen");
+        //perror("fopen");
         return -2;
     }
 
     if (fwrite(in, 1, len, fp) != len) {
-        fprintf(stderr, "write_file: imcomplete write!\n");
+        //fprintf(stderr, "write_file: imcomplete write!\n");
         return -3; 
     }
     return fclose(fp);
@@ -321,7 +320,7 @@ CURL *easy_handle_init(RECV_BUF *ptr, const char *url)
     curl_handle = curl_easy_init();
 
     if (curl_handle == NULL) {
-        fprintf(stderr, "curl_easy_init: returned NULL\n");
+        //fprintf(stderr, "curl_easy_init: returned NULL\n");
         return NULL;
     }
 
@@ -380,9 +379,12 @@ int process_html(CURL *curl_handle, RECV_BUF *p_recv_buf, Node_t **to_visit)
 int process_png(CURL *curl_handle, RECV_BUF *p_recv_buf, Node_t **png_urls)
 {
     char *eurl = NULL;          /* effective URL */
+    char *recordurl;
     curl_easy_getinfo(curl_handle, CURLINFO_EFFECTIVE_URL, &eurl);
     if ( eurl != NULL) {
-        push(png_urls, eurl);
+        recordurl = (char *) malloc((1 + strlen(eurl)) * sizeof(char));
+        strcpy(recordurl, eurl);
+        push(png_urls, recordurl);
     } else {
         return 1;
     }
@@ -403,20 +405,20 @@ int process_data(CURL *curl_handle, RECV_BUF *p_recv_buf, Node_t **to_visit, Nod
 
     res = curl_easy_getinfo(curl_handle, CURLINFO_RESPONSE_CODE, &response_code);
     if ( res == CURLE_OK ) {
-	    printf("Response code: %ld\n", response_code);
+	    //printf("Response code: %ld\n", response_code);
     }
 
     if ( response_code >= 400 ) { 
-    	fprintf(stderr, "Error.\n");
+    	//fprintf(stderr, "Error.\n");
         return 1;
     }
 
     char *ct = NULL;
     res = curl_easy_getinfo(curl_handle, CURLINFO_CONTENT_TYPE, &ct);
     if ( res == CURLE_OK && ct != NULL ) {
-    	printf("Content-Type: %s, len=%ld\n", ct, strlen(ct));
+    	//printf("Content-Type: %s, len=%ld\n", ct, strlen(ct));
     } else {
-        fprintf(stderr, "Failed obtain Content-Type\n");
+        //fprintf(stderr, "Failed obtain Content-Type\n");
         return 2;
     }
 
@@ -450,14 +452,14 @@ int main( int argc, char** argv )
     curl_handle = easy_handle_init(&recv_buf, url);
 
     if ( curl_handle == NULL ) {
-        fprintf(stderr, "Curl initialization failed. Exiting...\n");
+        //fprintf(stderr, "Curl initialization failed. Exiting...\n");
         curl_global_cleanup();
         abort();
     }
     res = curl_easy_perform(curl_handle);
 
     if( res != CURLE_OK) {
-        fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+        //fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
         cleanup(curl_handle, &recv_buf);
         exit(1);
     } else {
