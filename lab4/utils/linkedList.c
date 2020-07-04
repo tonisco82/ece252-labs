@@ -81,7 +81,7 @@ void freeMemory(Node_t *head_node)
         head_node = head_node->next;
 
         // Free the data
-        free(curr_node->data);
+        if(curr_node->data != NULL) free(curr_node->data);
         free(curr_node);
 
         // Assign the current node to the next node
