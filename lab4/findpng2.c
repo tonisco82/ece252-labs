@@ -363,7 +363,7 @@ int fetch_information(Node_t **to_visit, Node_t** png_urls, char* url){
     }
 
     /* process the download data */
-    if (process_data(curl_handle, &recv_buf, to_visit, png_urls) !=0){
+    if (process_data(curl_handle, &recv_buf, &to_visit, &png_urls) !=0){
         cleanup(curl_handle, &recv_buf);
         return 1;
     }

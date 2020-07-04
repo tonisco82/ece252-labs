@@ -145,7 +145,7 @@ int find_http(char *buf, int size, int follow_relative_links, const char *base_u
             if ( href != NULL && !strncmp((const char *)href, "http", 4) ) {
                 *recordurl = (char*) href;
                 //push to linked list
-                push(to_visit, recordurl);
+                push(&to_visit, recordurl);
             }
             xmlFree(href);
         }
@@ -371,7 +371,7 @@ int process_html(CURL *curl_handle, RECV_BUF *p_recv_buf, Node_t **to_visit)
     char *url = NULL; 
 
     curl_easy_getinfo(curl_handle, CURLINFO_EFFECTIVE_URL, &url);
-    find_http(p_recv_buf->buf, p_recv_buf->size, follow_relative_link, url, to_visit); 
+    find_http(p_recv_buf->buf, p_recv_buf->size, follow_relative_link, url, &to_visit); 
     return 0;
 }
 
@@ -380,7 +380,7 @@ int process_png(CURL *curl_handle, RECV_BUF *p_recv_buf, Node_t **png_urls)
     char *eurl = NULL;          /* effective URL */
     curl_easy_getinfo(curl_handle, CURLINFO_EFFECTIVE_URL, &eurl);
     if ( eurl != NULL) {
-        push(png_urls, eurl);
+        push(&png_urls, eurl);
     } else {
         return 1;
     }
@@ -419,9 +419,9 @@ int process_data(CURL *curl_handle, RECV_BUF *p_recv_buf, Node_t **to_visit, Nod
     }
 
     if ( strstr(ct, CT_HTML) ) {
-        return process_html(curl_handle, p_recv_buf, to_visit);
+        return process_html(curl_handle, p_recv_buf, &to_visit);
     } else if ( strstr(ct, CT_PNG) ) {
-        return process_png(curl_handle, p_recv_buf, png_urls);
+        return process_png(curl_handle, p_recv_buf, &png_urls);
     }
     //if its something else (not HTML or PNG), ignore it    
     return 0;
