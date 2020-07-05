@@ -39,6 +39,7 @@
 #include <libxml/uri.h>
 
 
+
 #define SEED_URL "http://ece252-1.uwaterloo.ca/lab4/"
 #define ECE252_HEADER "X-Ece252-Fragment: "
 #define BUF_SIZE 1048576  /* 1024*1024 = 1M */
@@ -48,6 +49,9 @@
 #define CT_HTML "text/html"
 #define CT_PNG_LEN  9
 #define CT_HTML_LEN 9
+#define PNG_HDR_SIZE    8 /* number of bytes of png image signature data */
+typedef unsigned char U8;
+const int png_header[PNG_HDR_SIZE] = {-119, 80, 78, 71, 13, 10, 26, 10};
 
 #define max(a, b) \
    ({ __typeof__ (a) _a = (a); \
@@ -63,6 +67,7 @@ typedef struct recv_buf2 {
 } RECV_BUF;
 
 
+
 htmlDocPtr mem_getdoc(char *buf, int size, const char *url);
 xmlXPathObjectPtr getnodeset (xmlDocPtr doc, xmlChar *xpath);
 int find_http(char *fname, int size, int follow_relative_links, const char *base_url, Node_t **to_visit);
@@ -74,6 +79,15 @@ void cleanup(CURL *curl, RECV_BUF *ptr);
 int write_file(const char *path, const void *in, size_t len);
 CURL *easy_handle_init(RECV_BUF *ptr, const char *url);
 int process_data(CURL *curl_handle, RECV_BUF *p_recv_buf, Node_t **to_visit, Node_t **png_urls);
+
+
+int png_header_checker(char* data){
+    /** Check for mismatch in array **/
+    for(int i = 0;i<PNG_HDR_SIZE;i++){
+        if(png_header[i] != data[i]) return 0;
+    }
+    return 1;
+}
 
 //given function
 htmlDocPtr mem_getdoc(char *buf, int size, const char *url)
@@ -381,7 +395,7 @@ int process_png(CURL *curl_handle, RECV_BUF *p_recv_buf, Node_t **png_urls)
     char *eurl = NULL;          /* effective URL */
     char *recordurl;
     curl_easy_getinfo(curl_handle, CURLINFO_EFFECTIVE_URL, &eurl);
-    if ( eurl != NULL) {
+    if ( eurl != NULL && png_header_checker(p_recv_buf->buf)) {
         recordurl = (char *) malloc((1 + strlen(eurl)) * sizeof(char));
         strcpy(recordurl, eurl);
         push(png_urls, recordurl);
@@ -390,7 +404,7 @@ int process_png(CURL *curl_handle, RECV_BUF *p_recv_buf, Node_t **png_urls)
     }
     return 0;
 }
-/**
+/** 
  * @brief process to download data by curl
  * @param CURL *curl_handle is the curl handler
  * @param RECV_BUF p_recv_buf contains the received data. 
