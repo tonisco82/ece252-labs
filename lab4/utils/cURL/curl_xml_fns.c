@@ -80,7 +80,7 @@ int write_file(const char *path, const void *in, size_t len);
 CURL *easy_handle_init(RECV_BUF *ptr, const char *url);
 int process_data(CURL *curl_handle, RECV_BUF *p_recv_buf, Node_t **to_visit, Node_t **png_urls);
 
-
+// Returns 1 on equal, 0 otherwise
 int png_header_checker(char* data){
     /** Check for mismatch in array **/
     for(int i = 0;i<PNG_HDR_SIZE;i++){
@@ -97,7 +97,7 @@ htmlDocPtr mem_getdoc(char *buf, int size, const char *url)
     htmlDocPtr doc = htmlReadMemory(buf, size, url, NULL, opts);
     
     if ( doc == NULL ) {
-        //fprintf(stderr, "Document not parsed successfully.\n");
+        fprintf(stderr, "Document not parsed successfully.\n");
         return NULL;
     }
     return doc;
@@ -273,7 +273,7 @@ int recv_buf_cleanup(RECV_BUF *ptr)
 void cleanup(CURL *curl, RECV_BUF *ptr)
 {
         curl_easy_cleanup(curl);
-        curl_global_cleanup();
+        //curl_global_cleanup(); //Not thread safe
         recv_buf_cleanup(ptr);
 }
 /**
@@ -334,7 +334,7 @@ CURL *easy_handle_init(RECV_BUF *ptr, const char *url)
     curl_handle = curl_easy_init();
 
     if (curl_handle == NULL) {
-        //fprintf(stderr, "curl_easy_init: returned NULL\n");
+        fprintf(stderr, "curl_easy_init: returned NULL\n");
         return NULL;
     }
 
@@ -418,12 +418,9 @@ int process_data(CURL *curl_handle, RECV_BUF *p_recv_buf, Node_t **to_visit, Nod
     long response_code;
 
     res = curl_easy_getinfo(curl_handle, CURLINFO_RESPONSE_CODE, &response_code);
-    if ( res == CURLE_OK ) {
-	    //printf("Response code: %ld\n", response_code);
-    }
 
     if ( response_code >= 400 ) { 
-    	//fprintf(stderr, "Error.\n");
+    	fprintf(stderr, "Error in cURL, >400 resonse code.\n");
         return 1;
     }
 
@@ -432,13 +429,15 @@ int process_data(CURL *curl_handle, RECV_BUF *p_recv_buf, Node_t **to_visit, Nod
     if ( res == CURLE_OK && ct != NULL ) {
     	//printf("Content-Type: %s, len=%ld\n", ct, strlen(ct));
     } else {
-        //fprintf(stderr, "Failed obtain Content-Type\n");
+        fprintf(stderr, "Failed obtain Content-Type\n");
         return 2;
     }
 
     if ( strstr(ct, CT_HTML) ) {
+        printf("curl: entering html processing\n");
         return process_html(curl_handle, p_recv_buf, to_visit);
     } else if ( strstr(ct, CT_PNG) ) {
+        printf("curl: entering png processing\n");
         return process_png(curl_handle, p_recv_buf, png_urls);
     }
     //if its something else (not HTML or PNG), ignore it    

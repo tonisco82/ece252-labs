@@ -108,8 +108,10 @@ int linkedlist_to_file(Node_t *head_node, char *file_path){
     // Iterate over list
     while (head_node != NULL)
     {
-        fwrite(head_node->data, strlen(head_node->data), 1, fp); //Write Data
-        fwrite(&new_line, sizeof(char), 1, fp); //Write newline character
+        if(head_node->data){
+            fwrite(head_node->data, strlen(head_node->data), 1, fp); //Write Data
+            fwrite(&new_line, sizeof(char), 1, fp); //Write newline character
+        }
 
         // Move to next node
         head_node = head_node->next;
