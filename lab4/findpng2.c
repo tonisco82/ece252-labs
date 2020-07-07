@@ -232,6 +232,7 @@ void *web_crawler(void *arg){
     int visited = 0;
     Node_t *png_urls = NULL;
     Node_t *to_visit = NULL;
+    int inserted = 0;
 
 
     while(findMorePNGs){
@@ -267,6 +268,7 @@ void *web_crawler(void *arg){
                 if(ret_entry == NULL){
                     perror("Error: Hashtable is full\n");
                     pthread_rwlock_unlock(input_data->hashtable_m);
+                    free(url);
                     abort();
                 }
             }
@@ -286,11 +288,13 @@ void *web_crawler(void *arg){
             if(fetch_information(&to_visit, &png_urls, url) == 0){
                 if(png_urls != NULL){
                     while(png_urls != NULL){
+                        inserted = 0;
                         // Make Copy of String
                         url_cpy = pop(&png_urls);
                         /** @critical_section: insert into png_urls **/
                         pthread_mutex_lock(input_data->png_urls_m);
                         if(*(input_data->numpicture) > 0){
+                            inserted = 1;
                             (*(input_data->numpicture))--;
                             push(input_data->png_urls, url_cpy);
                         }
@@ -301,6 +305,8 @@ void *web_crawler(void *arg){
                         }
                         pthread_mutex_unlock(input_data->png_urls_m);
                         /** @end_critical_section: **/
+
+                        if(inserted == 0) free(url_cpy);
                     }
                 }else if(to_visit != NULL){
                     /** @critical_section: add URLs to visit (after checking if already searched) **/
@@ -315,12 +321,16 @@ void *web_crawler(void *arg){
                             pthread_cond_signal(input_data->to_visit_threshold_cv);
                             pthread_mutex_unlock(input_data->to_visit_m);
                             /** @end_critical_section: **/
+                        }else{
+                            free(url_entry.key);
                         }
                     }
                     pthread_rwlock_unlock(input_data->hashtable_m);
                     /** @end_critical_section: **/
                 }
             }
+        }else{
+            free(url);
         }
 
         if(findMorePNGs){
