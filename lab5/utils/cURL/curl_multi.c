@@ -4,21 +4,72 @@
 
 #define MAX_WAIT_MSECS 30*1000 /* Wait max. 30 seconds */
 
-static size_t cb(char *d, size_t n, size_t l, void *p)
+typedef struct recv_buf2 {
+    char *buf;       /* memory to hold a copy of received data */
+    size_t size;     /* size of valid data in buf in bytes*/
+    size_t max_size; /* max capacity of buf in bytes*/
+    int seq;         /* >=0 sequence number extracted from http header */
+                     /* <0 indicates an invalid seq number */
+} RECV_BUF;
+
+/**
+ * @brief create a curl easy handle and set the options.
+ * @param RECV_BUF *ptr points to user data needed by the curl write call back function
+ * @param const char *url is the target url to fetch resoruce
+ * @return a valid CURL * handle upon sucess; NULL otherwise
+ * Note: the caller is responsbile for cleaning the returned curl handle
+ */
+CURL *multi_single_handle_init(const char *url)
 {
-  /* take care of the data here, ignored in this example */
-  (void)d;
-  (void)p;
-  return n*l;
+    CURL *curl_handle = NULL;
+
+    if ( ptr == NULL || url == NULL) {
+        return NULL;
+    }
+
+    /* init a curl session */
+    curl_handle = curl_easy_init();
+
+    if (curl_handle == NULL) {
+        fprintf(stderr, "curl_easy_init: returned NULL\n");
+        return NULL;
+    }
+
+    /* specify URL to get */
+    curl_easy_setopt(curl_handle, CURLOPT_URL, url);
+    /* some servers requires a user-agent field */
+    curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "ece252 lab4 crawler");
+    /* follow HTTP 3XX redirects */
+    curl_easy_setopt(curl_handle, CURLOPT_FOLLOWLOCATION, 1L);
+    /* continue to send authentication credentials when following locations */
+    curl_easy_setopt(curl_handle, CURLOPT_UNRESTRICTED_AUTH, 1L);
+    /* max numbre of redirects to follow sets to 5 */
+    curl_easy_setopt(curl_handle, CURLOPT_MAXREDIRS, 5L);
+    /* supports all built-in encodings */ 
+    curl_easy_setopt(curl_handle, CURLOPT_ACCEPT_ENCODING, "");
+    /* Enable the cookie engine without reading any initial cookies */
+    curl_easy_setopt(curl_handle, CURLOPT_COOKIEFILE, "");
+    /* allow whatever auth the proxy speaks */
+    curl_easy_setopt(curl_handle, CURLOPT_PROXYAUTH, CURLAUTH_ANY);
+    /* allow whatever auth the server speaks */
+    curl_easy_setopt(curl_handle, CURLOPT_HTTPAUTH, CURLAUTH_ANY);
+
+    return curl_handle;
 }
 
-static void curl_multi_init(CURLM *cm, char *url)
+static void curl_multi_init_easy(CURLM *cm, const char *url)
 {
-  CURL *eh = curl_easy_init();
-  curl_easy_setopt(eh, CURLOPT_WRITEFUNCTION, cb);
-  curl_easy_setopt(eh, CURLOPT_HEADER, 0L);
-  curl_easy_setopt(eh, CURLOPT_URL, url);
-  curl_easy_setopt(eh, CURLOPT_PRIVATE, url);
-  curl_easy_setopt(eh, CURLOPT_VERBOSE, 0L);
-  curl_multi_add_handle(cm, eh);
+  CURL *curl_handle = multi_single_handle_init(url);
+
+  if ( curl_handle == NULL ) {
+    fprintf(stderr, "Curl initialization failed. Exiting...\n");
+    recv_buf_cleanup(*recv_buf);
+    *recv_buf = NULL;
+    return 1;
+  }
+
+  /* Add to Multi */
+  curl_multi_add_handle(cm, curl_handle);
+
+  return 0;
 }

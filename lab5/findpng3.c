@@ -219,76 +219,47 @@ int retrieve_urls(web_crawler_input_t crawler_in){
 
         // Initialize cURL
     curl_global_init(CURL_GLOBAL_ALL);
-    CURLM *cm;
-    CURL *eh = NULL;
+    CURLM *cm = curl_multi_init();
+    curl_multi_setopt(multi_handle, CURLMOPT_MAX_TOTAL_CONNECTIONS, crawler_in.total_connections);
+    curl_multi_setopt(multi_handle, CURLMOPT_MAX_HOST_CONNECTIONS, 6L);
+    CURL *curl_handle = NULL;
     CURLMsg *msg = NULL;
+
+    curl_multi_init_easy(cm, get_next_valid_url(crawler_in.to_visit, visited_urls));
 
     /** Main Loop **/
     while(crawler_in.numpicture > 0){
-        // Initialize cURL
-        cm = curl_multi_init();
-
-        // Setup URL requests
-        for(int i = 0; i < crawler_in.total_connections; i++){
-            url = get_next_valid_url(crawler_in.to_visit, visited_urls);
-            if(url != NULL){
-              curl_multi_init(cm, url);
-            }
-        }
 
         // Perform Requests
-        still_running = 0;
-
+        res = curl_multi_wait(cm, NULL, 0, MAX_WAIT_MSECS, NULL);
+        if(res != CURLM_OK) {
+            fprintf(stderr, "error: curl_multi_wait() returned %d\n", res);
+            return EXIT_FAILURE;
+        }
         curl_multi_perform(cm, &still_running);
 
-        do {
-            res = curl_multi_wait(cm, NULL, 0, MAX_WAIT_MSECS, NULL);
-            if(res != CURLM_OK) {
-                fprintf(stderr, "error: curl_multi_wait() returned %d\n", res);
-                return 1;
-            }
-
-            curl_multi_perform(cm, &still_running);
-
-        } while(still_running);
-
-        msgs_left = 0
-
-        // Handle Results
-        while ((msg = curl_multi_info_read(cm, &msgs_left)) != NULL) {
+        // Process Results Continuously
+        while (msg = curl_multi_info_read(cm, &msgs_left)) {
             if (msg->msg == CURLMSG_DONE) {
-                eh = msg->easy_handle;
+                curl_handle = msg->easy_handle;
 
-                return_code = msg->data.result;
-                if(return_code != CURLE_OK) {
-                    fprintf(stderr, "CURL error code: %d\n", msg->data.result);
-                    continue;
+                curl_easy_getinfo(curl_handle, CURLINFO_PRIVATE, &mem); //TODO: replace with recv_buffer data pointer. Need to initialize the buffer.
+
+                if(msg->data.result == CURLE_OK){
+                    // Process Data
+                    multi_process_data(curl_handle, &recv_buf, crawler_in.to_visit, crawler_in.png_urls, visited_urls); // TODO: hook up to right recv_buffer pointer
                 }
 
-                // Get HTTP status code
-                http_status_code=0;
-                szUrl = NULL;
-
-                curl_easy_getinfo(eh, CURLINFO_RESPONSE_CODE, &http_status_code);
-                curl_easy_getinfo(eh, CURLINFO_PRIVATE, &szUrl);
-
-                if(http_status_code==200) {
-                    printf("200 OK for %s\n", szUrl);
-                } else {
-                    fprintf(stderr, "GET of %s returned http status code %d\n", szUrl, http_status_code);
-                }
-
-                curl_multi_remove_handle(cm, eh);
-                curl_easy_cleanup(eh);
+                curl_multi_remove_handle(cm, curl_handle);
+                curl_easy_cleanup(curl_handle);
             }
             else {
                 fprintf(stderr, "error: after curl_multi_info_read(), CURLMsg=%d\n", msg->msg);
             }
         }
-        
-        // cURL cleanup
-        curl_multi_cleanup(cm);
     }
+        // cURL cleanup
+    curl_multi_cleanup(cm);
 
         // cURL cleanup
     curl_global_cleanup();
