@@ -194,6 +194,70 @@ char *get_next_valid_url(Node_t **head_node, struct hsearch_data *htable){
     return NULL;
 }
 
+/**
+ * @brief: Process the data received from cURL. Add to the desired lists.
+ * @params:
+ * curl_handle: linked list of urls
+ * htable: hash table in question.
+ * @return: Number of urls added to the png_urls
+ */
+int multi_process_data(CURL *curl_handle, RECV_BUF *recv_buf, Node_t **to_visit, Node_t **png_urls, struct hsearch_data *visited_urls){
+    Node_t *temp_to_vist;
+    Node_t *temp_png_urls;
+    char *url;
+    int returnValue = 0;
+    ENTRY url_entry, *ret_entry;
+    url_entry.data = NULL;
+
+    if (process_data(curl_handle, recv_buf, &temp_to_vist, &temp_png_urls) != 0){
+        return 1;
+    }
+
+    if(temp_png_urls != NULL){
+        while(temp_png_urls != NULL){
+            // Make Copy of String
+            url = pop(&temp_png_urls);
+            push(to_visit, url);
+            returnValue++;
+        }
+    }
+    
+    if(temp_to_vist != NULL){
+        while(temp_to_vist != NULL){
+            url_entry.key = pop(&temp_to_vist);
+            hsearch_r(url_entry, FIND, &ret_entry, visited_urls);
+            if(ret_entry == NULL){
+                push(to_visit, url_entry.key);
+            }else{
+                free(url_entry.key);
+            }
+        }
+    }
+
+    freeMemory(temp_to_vist);
+    freeMemory(temp_png_urls);
+
+    return returnValue;
+}
+
+/**
+ * @brief: takes all urls from to_visit and creates cURL handlers
+ * @params:
+ * cm: curl multi handle
+ * to_visit: linked list of urls
+ * htable: hash table in question.
+ * @return: N/A
+ */
+void fill_multi_handlers(CURLM *cm, Node_t **to_visit, struct hsearch_data *htable){
+    char *url;
+    while(*to_visit != NULL){
+        url = get_next_valid_url(to_visit, htable);
+        if(url != NULL){
+            curl_multi_init_easy(cm, url);
+        }
+    }
+}
+
 
 /**
  * @brief: Retrieve URLs in a crawler, and log the PNG images retrieved.
@@ -207,7 +271,6 @@ int retrieve_urls(web_crawler_input_t crawler_in){
 
     /** Initial Variable Setup **/
     int still_running = 0, res, msgs_left = 0;
-    char *url = NULL;
 
     // Setup Hashtable
     struct hsearch_data *visited_urls = calloc(1, sizeof(struct hsearch_data));
@@ -220,15 +283,18 @@ int retrieve_urls(web_crawler_input_t crawler_in){
         // Initialize cURL
     curl_global_init(CURL_GLOBAL_ALL);
     CURLM *cm = curl_multi_init();
-    curl_multi_setopt(multi_handle, CURLMOPT_MAX_TOTAL_CONNECTIONS, crawler_in.total_connections);
-    curl_multi_setopt(multi_handle, CURLMOPT_MAX_HOST_CONNECTIONS, 6L);
+    curl_multi_setopt(cm, CURLMOPT_MAX_TOTAL_CONNECTIONS, (long) crawler_in.total_connections);
+    curl_multi_setopt(cm, CURLMOPT_MAX_HOST_CONNECTIONS, 6L);
     CURL *curl_handle = NULL;
     CURLMsg *msg = NULL;
+    RECV_BUF recv_buf;
 
+        // Start First Request
     curl_multi_init_easy(cm, get_next_valid_url(crawler_in.to_visit, visited_urls));
+    curl_multi_perform(cm, &still_running);
 
     /** Main Loop **/
-    while(crawler_in.numpicture > 0){
+    while(crawler_in.numpicture > 0 && still_running > 0){
 
         // Perform Requests
         res = curl_multi_wait(cm, NULL, 0, MAX_WAIT_MSECS, NULL);
@@ -236,28 +302,50 @@ int retrieve_urls(web_crawler_input_t crawler_in){
             fprintf(stderr, "error: curl_multi_wait() returned %d\n", res);
             return EXIT_FAILURE;
         }
-        curl_multi_perform(cm, &still_running);
 
         // Process Results Continuously
-        while (msg = curl_multi_info_read(cm, &msgs_left)) {
+        while ((msg = curl_multi_info_read(cm, &msgs_left))) {
             if (msg->msg == CURLMSG_DONE) {
+                // Init Buffer
+                recv_buf_init(&recv_buf, BUF_SIZE);
+
+                // Get Data
                 curl_handle = msg->easy_handle;
+                curl_easy_getinfo(curl_handle, CURLINFO_PRIVATE, recv_buf.buf);
 
-                curl_easy_getinfo(curl_handle, CURLINFO_PRIVATE, &mem); //TODO: replace with recv_buffer data pointer. Need to initialize the buffer.
-
+                // Process Data if valid cURL
                 if(msg->data.result == CURLE_OK){
                     // Process Data
-                    multi_process_data(curl_handle, &recv_buf, crawler_in.to_visit, crawler_in.png_urls, visited_urls); // TODO: hook up to right recv_buffer pointer
+                    crawler_in.numpicture -= multi_process_data(curl_handle, &recv_buf, crawler_in.to_visit, crawler_in.png_urls, visited_urls);
                 }
 
+                fill_multi_handlers(cm, crawler_in.to_visit, visited_urls);
+
+                // Cleanup
                 curl_multi_remove_handle(cm, curl_handle);
                 curl_easy_cleanup(curl_handle);
+                recv_buf_cleanup(&recv_buf);
             }
             else {
                 fprintf(stderr, "error: after curl_multi_info_read(), CURLMsg=%d\n", msg->msg);
             }
         }
+
+        curl_multi_perform(cm, &still_running);
     }
+
+        // Cleanup all curl requests in progress
+    long timeo = 0;
+    curl_multi_timeout(cm, &timeo);
+    do{
+        res = curl_multi_wait(cm, NULL, 0, 0, NULL);
+        curl_multi_perform(cm, &still_running);
+    }while(still_running > 0);
+    while ((msg = curl_multi_info_read(cm, &msgs_left))) {
+        curl_multi_remove_handle(cm, msg->easy_handle);
+        curl_easy_cleanup(msg->easy_handle);
+    }
+
         // cURL cleanup
     curl_multi_cleanup(cm);
 

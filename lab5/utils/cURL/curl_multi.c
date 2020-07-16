@@ -1,16 +1,10 @@
 #include <curl/multi.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "curl_xml_fns.c"
 
 #define MAX_WAIT_MSECS 30*1000 /* Wait max. 30 seconds */
 
-typedef struct recv_buf2 {
-    char *buf;       /* memory to hold a copy of received data */
-    size_t size;     /* size of valid data in buf in bytes*/
-    size_t max_size; /* max capacity of buf in bytes*/
-    int seq;         /* >=0 sequence number extracted from http header */
-                     /* <0 indicates an invalid seq number */
-} RECV_BUF;
 
 /**
  * @brief create a curl easy handle and set the options.
@@ -23,7 +17,7 @@ CURL *multi_single_handle_init(const char *url)
 {
     CURL *curl_handle = NULL;
 
-    if ( ptr == NULL || url == NULL) {
+    if (url == NULL) {
         return NULL;
     }
 
@@ -57,14 +51,12 @@ CURL *multi_single_handle_init(const char *url)
     return curl_handle;
 }
 
-static void curl_multi_init_easy(CURLM *cm, const char *url)
+int curl_multi_init_easy(CURLM *cm, const char *url)
 {
   CURL *curl_handle = multi_single_handle_init(url);
 
   if ( curl_handle == NULL ) {
     fprintf(stderr, "Curl initialization failed. Exiting...\n");
-    recv_buf_cleanup(*recv_buf);
-    *recv_buf = NULL;
     return 1;
   }
 
