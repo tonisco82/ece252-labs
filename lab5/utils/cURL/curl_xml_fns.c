@@ -49,7 +49,7 @@
 #define CT_HTML "text/html"
 #define CT_PNG_LEN  9
 #define CT_HTML_LEN 9
-#define PNG_HDR_SIZE 8 /* number of bytes of png image signature data */
+#define PNG_HDR_SIZE    8 /* number of bytes of png image signature data */
 typedef unsigned char U8;
 const int png_header[PNG_HDR_SIZE] = {-119, 80, 78, 71, 13, 10, 26, 10};
 
@@ -147,6 +147,7 @@ int find_http(char *buf, int size, int follow_relative_links, const char *base_u
 
     doc = mem_getdoc(buf, size, base_url);
     result = getnodeset (doc, xpath);
+
     if (result) {
         nodeset = result->nodesetval;
         for (i=0; i < nodeset->nodeNr; i++) {

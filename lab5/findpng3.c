@@ -164,7 +164,7 @@ int main(int argc, char *argv[]) {
  * htable: hash table in question.
  * @return: NULL if no url matches, or pointer to a matching url.
  */
-char *get_next_valid_url(Node_t **head_node, struct hsearch_data *htable){
+char *get_next_valid_url(Node_t **head_node, struct hsearch_data *htable, Node_t **log){
     // Initial Setup
     ENTRY url_entry, *ret_entry;
     url_entry.data = NULL;
@@ -185,6 +185,9 @@ char *get_next_valid_url(Node_t **head_node, struct hsearch_data *htable){
                 free(url_entry.key);
                 return NULL;
             }
+            char *temp_url = (char *) malloc((1 + strlen(url_entry.key)) * sizeof(char));
+            strcpy(temp_url, url_entry.key);
+            push(log, temp_url);
             return url_entry.key;
         }
 
@@ -201,24 +204,26 @@ char *get_next_valid_url(Node_t **head_node, struct hsearch_data *htable){
  * htable: hash table in question.
  * @return: Number of urls added to the png_urls
  */
-int multi_process_data(CURL *curl_handle, RECV_BUF *recv_buf, Node_t **to_visit, Node_t **png_urls, struct hsearch_data *visited_urls){
-    Node_t *temp_to_vist;
-    Node_t *temp_png_urls;
+int multi_process_data(CURL *curl_handle, RECV_BUF *recv_buf, Node_t **to_visit, Node_t **png_urls, struct hsearch_data *visited_urls, int *still_waiting){
+    Node_t *temp_to_vist = NULL;
+    Node_t *temp_png_urls = NULL;
     char *url;
     int returnValue = 0;
     ENTRY url_entry, *ret_entry;
     url_entry.data = NULL;
 
     if (process_data(curl_handle, recv_buf, &temp_to_vist, &temp_png_urls) != 0){
-        return 1;
+        return 0;
     }
 
     if(temp_png_urls != NULL){
         while(temp_png_urls != NULL){
             // Make Copy of String
             url = pop(&temp_png_urls);
-            push(to_visit, url);
-            returnValue++;
+            if(url != NULL){
+                push(png_urls, url);
+                returnValue++;
+            }
         }
     }
     
@@ -228,6 +233,7 @@ int multi_process_data(CURL *curl_handle, RECV_BUF *recv_buf, Node_t **to_visit,
             hsearch_r(url_entry, FIND, &ret_entry, visited_urls);
             if(ret_entry == NULL){
                 push(to_visit, url_entry.key);
+                if(*still_waiting == 0) *still_waiting = 1;
             }else{
                 free(url_entry.key);
             }
@@ -248,10 +254,10 @@ int multi_process_data(CURL *curl_handle, RECV_BUF *recv_buf, Node_t **to_visit,
  * htable: hash table in question.
  * @return: N/A
  */
-void fill_multi_handlers(CURLM *cm, Node_t **to_visit, struct hsearch_data *htable){
+void fill_multi_handlers(CURLM *cm, Node_t **to_visit, struct hsearch_data *htable, Node_t **log){
     char *url;
     while(*to_visit != NULL){
-        url = get_next_valid_url(to_visit, htable);
+        url = get_next_valid_url(to_visit, htable, log);
         if(url != NULL){
             curl_multi_init_easy(cm, url);
         }
@@ -270,7 +276,8 @@ void fill_multi_handlers(CURLM *cm, Node_t **to_visit, struct hsearch_data *htab
 int retrieve_urls(web_crawler_input_t crawler_in){
 
     /** Initial Variable Setup **/
-    int still_running = 0, res, msgs_left = 0;
+    int still_running = 1, res, msgs_left = 0;
+    char *url;
 
     // Setup Hashtable
     struct hsearch_data *visited_urls = calloc(1, sizeof(struct hsearch_data));
@@ -287,11 +294,11 @@ int retrieve_urls(web_crawler_input_t crawler_in){
     curl_multi_setopt(cm, CURLMOPT_MAX_HOST_CONNECTIONS, 6L);
     CURL *curl_handle = NULL;
     CURLMsg *msg = NULL;
-    RECV_BUF recv_buf;
+    RECV_BUF *recv_buf;
 
         // Start First Request
-    curl_multi_init_easy(cm, get_next_valid_url(crawler_in.to_visit, visited_urls));
-    curl_multi_perform(cm, &still_running);
+    url = get_next_valid_url(crawler_in.to_visit, visited_urls, crawler_in.log);
+    curl_multi_init_easy(cm, url);
 
     /** Main Loop **/
     while(crawler_in.numpicture > 0 && still_running > 0){
@@ -302,36 +309,35 @@ int retrieve_urls(web_crawler_input_t crawler_in){
             fprintf(stderr, "error: curl_multi_wait() returned %d\n", res);
             return EXIT_FAILURE;
         }
+        curl_multi_perform(cm, &still_running);
 
         // Process Results Continuously
         while ((msg = curl_multi_info_read(cm, &msgs_left))) {
             if (msg->msg == CURLMSG_DONE) {
-                // Init Buffer
-                recv_buf_init(&recv_buf, BUF_SIZE);
-
                 // Get Data
                 curl_handle = msg->easy_handle;
-                curl_easy_getinfo(curl_handle, CURLINFO_PRIVATE, recv_buf.buf);
+                curl_easy_getinfo(curl_handle, CURLINFO_PRIVATE, &recv_buf);
+                curl_easy_getinfo(curl_handle, CURLINFO_EFFECTIVE_URL, &url);
 
                 // Process Data if valid cURL
                 if(msg->data.result == CURLE_OK){
                     // Process Data
-                    crawler_in.numpicture -= multi_process_data(curl_handle, &recv_buf, crawler_in.to_visit, crawler_in.png_urls, visited_urls);
+                    crawler_in.numpicture -= multi_process_data(curl_handle, recv_buf, crawler_in.to_visit, crawler_in.png_urls, visited_urls, &still_running);
                 }
 
-                fill_multi_handlers(cm, crawler_in.to_visit, visited_urls);
+                fill_multi_handlers(cm, crawler_in.to_visit, visited_urls, crawler_in.log);
 
                 // Cleanup
                 curl_multi_remove_handle(cm, curl_handle);
                 curl_easy_cleanup(curl_handle);
-                recv_buf_cleanup(&recv_buf);
+                recv_buf_cleanup(recv_buf);
+                if(recv_buf != NULL) free(recv_buf);
+                recv_buf = NULL;
             }
             else {
                 fprintf(stderr, "error: after curl_multi_info_read(), CURLMsg=%d\n", msg->msg);
             }
         }
-
-        curl_multi_perform(cm, &still_running);
     }
 
         // Cleanup all curl requests in progress
@@ -344,6 +350,10 @@ int retrieve_urls(web_crawler_input_t crawler_in){
     while ((msg = curl_multi_info_read(cm, &msgs_left))) {
         curl_multi_remove_handle(cm, msg->easy_handle);
         curl_easy_cleanup(msg->easy_handle);
+        curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, &recv_buf);
+        recv_buf_cleanup(recv_buf);
+        if(recv_buf != NULL) free(recv_buf);
+        recv_buf = NULL;
     }
 
         // cURL cleanup
