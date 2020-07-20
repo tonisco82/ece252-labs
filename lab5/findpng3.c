@@ -104,14 +104,6 @@ int main(int argc, char *argv[]) {
     Node_t *png_urls = NULL; // The resulting png urls (of valid PNGs)
     Node_t *to_visit = NULL; // A list (stack) of the next URLs to Visit. After pop need to ensure the URL has not been checked before (but also check before putting in to save memory)
     Node_t *log = NULL; // A log of every URL visited in order
-    struct hsearch_data *visited_urls = calloc(1, sizeof(struct hsearch_data));
-    if(hcreate_r(MAX_HTABLE_SZ, visited_urls) == 0){
-        perror("Error: insufficient space to create hashtable\n");
-        free(logfile);
-        free(seed_url);
-        free(visited_urls);
-        return -1;
-    }
 
     /** @main_section: Start Main Part of the Program **/
 
@@ -129,7 +121,6 @@ int main(int argc, char *argv[]) {
         perror("Error: retrieve_urls returned error\n");
         free(logfile);
         free(seed_url);
-        free(visited_urls);
         freeMemory(png_urls);
         return -1;
     }
@@ -185,9 +176,10 @@ char *get_next_valid_url(Node_t **head_node, struct hsearch_data *htable, Node_t
                 free(url_entry.key);
                 return NULL;
             }
-            char *temp_url = (char *) malloc((1 + strlen(url_entry.key)) * sizeof(char));
-            strcpy(temp_url, url_entry.key);
-            push(log, temp_url);
+            // char *temp_url = (char *) malloc((1 + strlen(url_entry.key)) * sizeof(char));
+            // strcpy(temp_url, url_entry.key);
+            // push(log, temp_url);
+            push(log, url_entry.key);
             return url_entry.key;
         }
 
@@ -340,18 +332,21 @@ int retrieve_urls(web_crawler_input_t crawler_in){
         }
     }
 
-        // Cleanup all curl requests in progress
-    long timeo = 0;
-    curl_multi_timeout(cm, &timeo);
+    // Cleanup All the Other Requests Currently Running. This part Runs them all concurrently to speed up the process.
+    // Can't find a way to cancel requests already submitted, so instead just run them as quickly as possible.
+    curl_multi_perform(cm, &still_running);
+    curl_multi_setopt(cm, CURLMOPT_MAX_TOTAL_CONNECTIONS, (long) still_running);
     do{
         res = curl_multi_wait(cm, NULL, 0, 0, NULL);
         curl_multi_perform(cm, &still_running);
     }while(still_running > 0);
     while ((msg = curl_multi_info_read(cm, &msgs_left))) {
         curl_multi_remove_handle(cm, msg->easy_handle);
+        if (msg->msg == CURLMSG_DONE) {
+            curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, &recv_buf);
+            recv_buf_cleanup(recv_buf);
+        }
         curl_easy_cleanup(msg->easy_handle);
-        curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, &recv_buf);
-        recv_buf_cleanup(recv_buf);
         if(recv_buf != NULL) free(recv_buf);
         recv_buf = NULL;
     }
